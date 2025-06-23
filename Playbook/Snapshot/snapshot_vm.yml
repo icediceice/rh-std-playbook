@@ -1,0 +1,50 @@
+---
+- name: Create VM Snapshot
+  hosts: localhost
+  gather_facts: false
+  connection: local
+
+  # Load default variables. These can be overridden by extra-vars or a survey.
+  vars_files:
+    - vars/main.yml
+
+  tasks:
+    - name: Pre-flight | Validate virtualization_platform variable
+      ansible.builtin.fail:
+        msg: "The 'virtualization_platform' variable must be set to either 'vmware' or 'openshift'."
+      when: virtualization_platform is not defined or virtualization_platform not in ['vmware', 'openshift']
+
+    # ==============================================================================
+    # VMware Snapshot Logic
+    # ==============================================================================
+    - name: VMware Snapshot Tasks
+      block:
+        - name: Create snapshot for VMware VM
+          community.vmware.vmware_guest_snapshot:
+            # These are expected to be provided by an AAP credential
+            hostname: "{{ vcenter_hostname }}"
+            username: "{{ vcenter_username }}"
+            password: "{{ vcenter_password }}"
+            validate_certs: false # Set to true in production if you have valid certs
+
+            # These are playbook-specific variables
+            datacenter: "{{ vcenter_datacenter }}"
+            name: "{{ vm_name }}"
+            state: present
+            snapshot_name: "{{ snapshot_name }}"
+            description: "{{ snapshot_description | default(omit) }}"
+      when: virtualization_platform == 'vmware'
+
+    # ==============================================================================
+    # OpenShift Virtualization Snapshot Logic
+    # ==============================================================================
+    - name: OpenShift Virtualization Snapshot Tasks
+      block:
+        - name: Create snapshot for OpenShift VM
+          kubevirt.core.kubevirt_vmsnapshot:
+            # The connection is handled by the Kubernetes API credential in AAP
+            state: present
+            name: "{{ snapshot_name }}"
+            namespace: "{{ vm_namespace }}"
+            vm_name: "{{ vm_name }}"
+      when: virtualization_platform == 'openshift'

@@ -1,0 +1,81 @@
+---
+- name: Interactive Inventory Management
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  # This playbook helps new users add hosts to the inventory file interactively.
+  #
+  # How to run from the 'Auto-Patching' directory:
+  # ansible-playbook -i inventory manage_inventory.yml
+  #
+  # It will display the current inventory and then prompt you for the new host's
+  # details to add it to the correct section ([linux] or [windows]).
+
+  vars:
+    inventory_file: "inventory" # Relative path to your inventory file
+
+  tasks:
+    - name: Display current inventory file
+      ansible.builtin.debug:
+        msg:
+          - "--- Current Inventory ('{{ inventory_file }}') ---"
+          - "{{ lookup('file', inventory_file) }}"
+          - "---------------------------------------------"
+      tags: [always]
+
+    - name: Prompt for new host details - Hostname
+      ansible.builtin.pause:
+        prompt: |
+          Please provide the FQDN for the new host and press Enter
+          Hostname
+        echo: true
+      register: prompt_hostname
+
+    - name: Prompt for new host details - IP Address
+      ansible.builtin.pause:
+        prompt: |
+          Please provide the IP Address for the new host and press Enter
+          IP Address
+        echo: true
+      register: prompt_ip
+
+    - name: Prompt for new host details - OS Type
+      ansible.builtin.pause:
+        prompt: |
+          Please provide the OS Type for the new host and press Enter
+          OS Type [linux/windows]
+        echo: true
+      register: prompt_os_type
+
+    - name: Set facts from user input
+      ansible.builtin.set_fact:
+        new_hostname: "{{ prompt_hostname.user_input }}"
+        new_host_ip: "{{ prompt_ip.user_input }}"
+        host_os_type: "{{ prompt_os_type.user_input | lower }}"
+
+    - name: Validate inputs
+      ansible.builtin.fail:
+        msg: "Hostname, IP address, and OS type cannot be empty."
+      when: new_hostname == "" or new_host_ip == "" or host_os_type == ""
+
+    - name: Validate OS type input
+      ansible.builtin.fail:
+        msg: "Invalid OS type '{{ host_os_type }}'. Please enter 'linux' or 'windows'."
+      when: host_os_type not in ['linux', 'windows']
+
+    - name: Add new host to the inventory file
+      ansible.builtin.lineinfile:
+        path: "{{ inventory_file }}"
+        line: "{{ new_hostname }} ansible_host={{ new_host_ip }}"
+        insertafter: "^\\[{{ host_os_type }}\\]"
+        state: present
+      notify: Show updated inventory
+
+  handlers:
+    - name: Show updated inventory
+      listen: Show updated inventory
+      ansible.builtin.debug:
+        msg:
+          - "--- Updated Inventory ('{{ inventory_file }}') ---"
+          - "{{ lookup('file', inventory_file) }}"
+          - "---------------------------------------------"

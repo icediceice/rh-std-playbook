@@ -1,0 +1,17 @@
+---
+- name: Pre-flight | Validate OpenShift Virtualization variables
+  ansible.builtin.assert:
+    that:
+      - vm_namespace is defined and vm_namespace | length > 0
+      - vm_name is defined and vm_name | length > 0
+      - snapshot_name is defined and snapshot_name | length > 0
+    fail_msg: "For OpenShift, vm_namespace, vm_name, and snapshot_name must be defined."
+    quiet: true
+
+- name: Create snapshot for OpenShift VM
+  kubevirt.core.kubevirt_vmsnapshot:
+    # The connection is handled by the Kubernetes API credential in AAP
+    state: present
+    name: "{{ snapshot_name }}"
+    namespace: "{{ vm_namespace }}"
+    vm_name: "{{ vm_name }}"

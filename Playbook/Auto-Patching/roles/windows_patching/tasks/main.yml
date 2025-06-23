@@ -1,0 +1,16 @@
+---
+- name: Install Windows Updates
+  ansible.windows.win_updates:
+    category_names: "{{ win_update_categories }}"
+    reboot: false # We will control reboot in the main playbook
+    log_path: C:\ansible_win_updates.log
+  register: update_result
+
+- name: Debug update results
+  ansible.builtin.debug:
+    var: update_result
+
+- name: Set reboot required fact
+  ansible.builtin.set_fact:
+    patching_reboot_required: true
+  when: update_result.reboot_required

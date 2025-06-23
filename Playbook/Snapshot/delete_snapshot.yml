@@ -1,0 +1,23 @@
+---
+- name: Delete VM Snapshot
+  hosts: localhost
+  gather_facts: false
+  connection: local
+
+  # Load default variables. These can be overridden by extra-vars or a survey.
+  vars_files:
+    - vars/main.yml
+
+  tasks:
+    - name: Pre-flight | Validate virtualization_platform variable
+      ansible.builtin.fail:
+        msg: "The 'virtualization_platform' variable must be set to either 'vmware' or 'openshift'."
+      when: virtualization_platform is not defined or virtualization_platform not in ['vmware', 'openshift']
+
+    - name: Include VMware snapshot deletion tasks
+      ansible.builtin.include_tasks: tasks/delete_vmware_snapshot.yml
+      when: virtualization_platform == 'vmware'
+
+    - name: Include OpenShift Virtualization snapshot deletion tasks
+      ansible.builtin.include_tasks: tasks/delete_openshift_snapshot.yml
+      when: virtualization_platform == 'openshift'

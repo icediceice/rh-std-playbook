@@ -1,0 +1,51 @@
+---
+# Default variables for VM Snapshot Playbooks
+
+# The virtualization platform to target.
+# Required. Must be 'vmware' or 'openshift'.
+# Example: "vmware"
+virtualization_platform: ""
+
+# The name of the virtual machine to snapshot.
+# Required.
+# Example: "my-vm-01"
+vm_name: ""
+
+# The name for the snapshot.
+# Required.
+# Example: "pre-upgrade-snapshot-{{ ansible_date_time.iso8651_basic_short }}"
+snapshot_name: ""
+
+# ==============================================================================
+# VMware-specific variables
+# ==============================================================================
+
+# vCenter hostname or IP address.
+# Required for VMware. Best provided via credential.
+vcenter_hostname: ""
+
+# vCenter username.
+# Required for VMware. Best provided via credential.
+vcenter_username: ""
+
+# vCenter password.
+# Required for VMware. Best provided via credential.
+vcenter_password: ""
+
+# The name of the datacenter in vCenter where the VM resides.
+# Required for VMware.
+# Example: "MyDatacenter"
+vcenter_datacenter: ""
+
+# An optional description for the VMware snapshot.
+# Example: "Snapshot taken before applying system updates."
+snapshot_description: "Snapshot created by Ansible playbook."
+
+# ==============================================================================
+# OpenShift Virtualization-specific variables
+# ==============================================================================
+
+# The OpenShift project/namespace where the VM resides.
+# Required for OpenShift.
+# Example: "my-vm-project"
+vm_namespace: ""

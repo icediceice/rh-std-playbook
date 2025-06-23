@@ -1,0 +1,26 @@
+---
+- name: Pre-flight | Validate VMware variables
+  ansible.builtin.assert:
+    that:
+      - vcenter_hostname is defined and vcenter_hostname | length > 0
+      - vcenter_username is defined and vcenter_username | length > 0
+      - vcenter_password is defined and vcenter_password | length > 0
+      - vcenter_datacenter is defined and vcenter_datacenter | length > 0
+      - vm_name is defined and vm_name | length > 0
+      - snapshot_name is defined and snapshot_name | length > 0
+    fail_msg: "For VMware, vcenter_hostname, vcenter_username, vcenter_password, vcenter_datacenter, vm_name, and snapshot_name must be defined."
+    quiet: true
+
+- name: Delete snapshot for VMware VM
+  community.vmware.vmware_guest_snapshot:
+    # These are expected to be provided by an AAP credential
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: false # Set to true in production if you have valid certs
+
+    # These are playbook-specific variables
+    datacenter: "{{ vcenter_datacenter }}"
+    name: "{{ vm_name }}"
+    state: absent
+    snapshot_name: "{{ snapshot_name }}"

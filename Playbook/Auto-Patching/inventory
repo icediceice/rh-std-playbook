@@ -1,0 +1,16 @@
+[linux]
+linux-node1.example.com ansible_host=192.168.1.10
+
+[windows]
+windows-node1.example.com ansible_host=192.168.1.20
+
+[all:vars]
+# Common variables for all hosts
+# It's recommended to store credentials in AAP's credential store
+# ansible_user=your_user
+# ansible_ssh_private_key_file=~/.ssh/id_rsa
+
+[windows:vars]
+ansible_connection=winrm
+ansible_winrm_server_cert_validation=ignore
+ansible_winrm_transport=kerberos # or basic, ntlm, credssp

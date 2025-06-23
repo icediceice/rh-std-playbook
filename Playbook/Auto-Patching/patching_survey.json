@@ -1,0 +1,41 @@
+{
+  "name": "OS Patching Survey",
+  "description": "Survey for the OS Patching Job Template",
+  "spec": [
+    {
+      "question_name": "Which hosts would you like to patch?",
+      "question_description": "Select the inventory group to target for patching.",
+      "variable": "patch_target",
+      "type": "multiplechoice",
+      "choices": "all\nlinux\nwindows",
+      "required": true,
+      "default": "all"
+    },
+    {
+      "question_name": "Allow hosts to be rebooted if required?",
+      "question_description": "Select 'yes' to permit an automatic reboot if updates require it.",
+      "variable": "allow_reboot",
+      "type": "multiplechoice",
+      "choices": "yes\nno",
+      "required": true,
+      "default": "no"
+    },
+    {
+      "question_name": "(Windows) Select update categories to install",
+      "question_description": "Choose one or more Windows Update categories to apply.",
+      "variable": "win_update_categories",
+      "type": "multiselect",
+      "choices": "Application\nCriticalUpdates\nDefinitionUpdates\nDeveloperKits\nFeaturePacks\nSecurityUpdates\nServicePacks\nTools\nUpdateRollups\nUpdates",
+      "required": false,
+      "default": "SecurityUpdates\nCriticalUpdates"
+    },
+    {
+      "question_name": "(Linux) List any packages to exclude",
+      "question_description": "Enter a comma-separated list of packages to exclude from updates (e.g., kernel*,httpd).",
+      "variable": "linux_exclude_packages",
+      "type": "text",
+      "required": false,
+      "default": ""
+    }
+  ]
+}

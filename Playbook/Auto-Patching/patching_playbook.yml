@@ -1,0 +1,58 @@
+---
+- name: OS Patching Pre-flight and Execution
+  hosts: "{{ patch_target }}"
+  gather_facts: true
+
+  # --- Inventory Management ---
+  # For an interactive way to add new hosts to your inventory file,
+  # you can use the 'manage_inventory.yml' playbook:
+  # ansible-playbook -i inventory manage_inventory.yml
+
+  # For AAP/AWX, the survey definition can be found in patching_survey.json
+  # This provides a declarative way to manage the Job Template survey.
+
+  vars:
+    # --- AAP Survey Variables with Defaults ---
+    # These defaults are used if the playbook is run outside of AAP
+    # or if the survey variables are not provided.
+
+    # Target group for patching.
+    patch_target: "all" # Options: all, linux, windows
+
+    # Whether to reboot hosts if patching requires it.
+    allow_reboot: "no" # Options: yes, no
+
+    # For Windows: List of update categories to install.
+    win_update_categories:
+      - SecurityUpdates
+      - CriticalUpdates
+
+    # For Linux: Comma-separated list of packages to exclude from updates.
+    linux_exclude_packages: "" # Example: "kernel*,httpd"
+
+  tasks:
+    - name: Include Linux patching role
+      ansible.builtin.include_role:
+        name: linux_patching
+      when: ansible_os_family == "RedHat" or ansible_os_family == "Debian"
+
+    - name: Include Windows patching role
+      ansible.builtin.include_role:
+        name: windows_patching
+      when: ansible_os_family == "Windows"
+
+- name: Post-Patching Reboot
+  hosts: "{{ patch_target }}"
+  gather_facts: false
+
+  vars:
+    allow_reboot: "no" # Ensure this is defined for this play
+
+  tasks:
+    - name: Reboot host if required and allowed
+      ansible.builtin.reboot:
+        reboot_timeout: 3600
+      when:
+        - patching_reboot_required | default(false)
+        - allow_reboot == "yes"
+      become: true # Rebooting usually requires elevated privileges
