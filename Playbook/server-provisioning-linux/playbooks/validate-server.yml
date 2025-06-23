@@ -1,0 +1,65 @@
+---
+- name: Validate server provisioning
+  hosts: "{{ target_hosts | default(inventory_hostname) }}"
+  gather_facts: yes
+  tasks:
+    - name: Check system services
+      systemd:
+        name: "{{ item }}"
+        state: started
+      check_mode: yes
+      register: service_status
+      failed_when: false
+      loop:
+        - firewalld
+        - "{{ 'httpd' if 'web' in server_role else 'sshd' }}"
+        - "{{ 'mysqld' if 'database' in server_role and database_type == 'mysql' else 'sshd' }}"
+        - "{{ 'postgresql' if 'database' in server_role and database_type == 'postgresql' else 'sshd' }}"
+        - "{{ 'rsyslog' if 'logging' in server_role else 'sshd' }}"
+    
+    - name: Check firewall status
+      command: firewall-cmd --state
+      register: firewall_state
+      failed_when: false
+      changed_when: false
+      when: enable_firewall | bool
+    
+    - name: Check SELinux status
+      command: getenforce
+      register: selinux_state
+      changed_when: false
+    
+    - name: Verify package installation
+      package:
+        name: "{{ item }}"
+        state: present
+      check_mode: yes
+      register: package_check
+      loop:
+        - rsyslog
+        - firewalld
+        - "{{ 'httpd' if 'web' in server_role else 'vim-enhanced' }}"
+    
+    - name: Generate validation report
+      set_fact:
+        validation_report: |
+          Server Validation Report
+          ========================
+          Hostname: {{ ansible_hostname }}
+          Environment: {{ server_environment }}
+          Role: {{ server_role }}
+          
+          Service Status:
+          {% for service in service_status.results %}
+          - {{ service.item }}: {{ 'Running' if service.state == 'started' else 'Not Running' }}
+          {% endfor %}
+          
+          Security:
+          - Firewall: {{ 'Enabled' if firewall_state.stdout == 'running' else 'Disabled' }}
+          - SELinux: {{ selinux_state.stdout }}
+          
+          Validation: {{ 'PASSED' if service_status.results | selectattr('failed', 'equalto', false) | list | length == service_status.results | length else 'FAILED' }}
+    
+    - name: Display validation report
+      debug:
+        msg: "{{ validation_report.split('\n') }}"

@@ -1,0 +1,90 @@
+---
+- name: Install essential general purpose packages
+  yum:
+    name: "{{ general_packages_essential }}"
+    state: present
+
+- name: Configure Podman (container runtime)
+  block:
+    - name: Install Podman and container tools
+      yum:
+        name: "{{ general_packages_optional.containers }}"
+        state: present
+    
+    - name: Configure Podman
+      copy:
+        dest: /etc/containers/registries.conf
+        content: |
+          [registries.search]
+          registries = ['registry.redhat.io', 'registry.access.redhat.com', 'quay.io', 'docker.io']
+          
+          [registries.insecure]
+          registries = []
+          
+          [registries.block]
+          registries = []
+    
+    - name: Create podman user
+      user:
+        name: podman
+        comment: "Podman service user"
+        shell: /bin/bash
+        home: /home/podman
+        create_home: yes
+    
+    - name: Configure podman socket
+      systemd:
+        name: podman.socket
+        state: started
+        enabled: yes
+  when: install_container_tools | bool
+
+- name: Configure basic system utilities
+  block:
+    - name: Update locate database
+      command: updatedb
+      changed_when: false
+    
+    - name: Create scripts directory
+      file:
+        path: /opt/scripts
+        state: directory
+        mode: '0755'
+    
+    - name: Deploy utility scripts
+      template:
+        src: "{{ item }}.j2"
+        dest: "/opt/scripts/{{ item }}"
+        mode: '0755'
+      loop:
+        - system-health-check.sh
+        - backup-configs.sh
+        - update-check.sh
+
+- name: Configure custom firewall rules
+  firewalld:
+    port: "{{ item.port }}/{{ item.protocol | default('tcp') }}"
+    permanent: yes
+    state: enabled
+    immediate: yes
+  loop: "{{ custom_firewall_rules | default([]) }}"
+  when: 
+    - enable_firewall | bool
+    - custom_firewall_rules is defined
+
+- name: Set up basic cron jobs
+  cron:
+    name: "{{ item.name }}"
+    minute: "{{ item.minute }}"
+    hour: "{{ item.hour }}"
+    job: "{{ item.job }}"
+  loop:
+    - name: "System health check"
+      minute: "0"
+      hour: "*/6"
+      job: "/opt/scripts/system-health-check.sh"
+    - name: "Configuration backup"
+      minute: "0"
+      hour: "1"
+      job: "/opt/scripts/backup-configs.sh"
+  when: enable_backups | bool

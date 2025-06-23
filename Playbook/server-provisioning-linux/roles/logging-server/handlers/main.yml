@@ -1,0 +1,25 @@
+---
+- name: restart rsyslog
+  systemd:
+    name: rsyslog
+    state: restarted
+
+- name: restart elasticsearch
+  systemd:
+    name: elasticsearch
+    state: restarted
+
+- name: restart kibana
+  systemd:
+    name: kibana
+    state: restarted
+
+- name: restart logstash
+  systemd:
+    name: logstash
+    state: restarted
+
+- name: reload rsyslog
+  systemd:
+    name: rsyslog
+    state: reloaded

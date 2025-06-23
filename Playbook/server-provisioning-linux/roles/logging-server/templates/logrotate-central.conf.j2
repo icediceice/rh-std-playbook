@@ -1,0 +1,14 @@
+/var/log/remote/*/*.log
+/var/log/remote/*/*/*.log {
+    daily
+    missingok
+    rotate {{ '90' if server_environment == 'production' else '30' }}
+    compress
+    delaycompress
+    notifempty
+    create 0640 root root
+    sharedscripts
+    postrotate
+        /bin/kill -HUP `cat /var/run/rsyslogd.pid 2> /dev/null` 2> /dev/null || true
+    endscript
+}

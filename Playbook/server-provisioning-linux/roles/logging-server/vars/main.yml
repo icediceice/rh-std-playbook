@@ -1,0 +1,17 @@
+---
+# Variables for logging-server role
+
+# Log categories
+log_categories:
+  - servers
+  - applications
+  - security
+  - audit
+  - kernel
+
+# Rsyslog modules
+rsyslog_modules:
+  - imtcp
+  - imudp
+  - imjournal
+  - ommail

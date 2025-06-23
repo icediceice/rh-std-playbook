@@ -1,0 +1,39 @@
+#!/bin/bash
+# Disk Usage Alert Script for {{ server_hostname }}
+
+THRESHOLD={{ disk_usage_threshold | default(80) }}
+ALERT_EMAIL="{{ admin_email }}"
+LOG_FILE="/var/log/disk-usage-check.log"
+
+echo "Disk Usage Check - $(date)" > $LOG_FILE
+echo "=============================" >> $LOG_FILE
+
+# Check all mounted filesystems
+df -H | grep -vE '^Filesystem|tmpfs|cdrom|udev' | awk '{ print $5 " " $1 " " $6 }' | while read output;
+do
+    usage=$(echo $output | awk '{ print $1}' | cut -d'%' -f1)
+    partition=$(echo $output | awk '{ print $2 }')
+    mountpoint=$(echo $output | awk '{ print $3 }')
+    
+    if [ $usage -ge $THRESHOLD ]; then
+        echo "ALERT: Partition $partition mounted on $mountpoint is ${usage}% full" >> $LOG_FILE
+        ALERT=1
+    else
+        echo "OK: Partition $partition mounted on $mountpoint is ${usage}% full" >> $LOG_FILE
+    fi
+done
+
+# Special check for log directory
+LOG_USAGE=$(df -h {{ central_log_dir }} | tail -1 | awk '{print $5}' | cut -d'%' -f1)
+echo -e "\nLog directory usage: ${LOG_USAGE}%" >> $LOG_FILE
+
+# Check individual log sizes
+echo -e "\nLargest log files:" >> $LOG_FILE
+find {{ central_log_dir }} -type f -name "*.log" -exec ls -lh {} \; | sort -k5 -hr | head -10 >> $LOG_FILE
+
+# Send alert if needed
+if [ -n "$ALERT" ] || [ $LOG_USAGE -ge $THRESHOLD ]; then
+    mail -s "Disk Usage Alert - {{ server_hostname }}" $ALERT_EMAIL < $LOG_FILE
+fi
+
+echo -e "\nCheck completed at $(date)" >> $LOG_FILE

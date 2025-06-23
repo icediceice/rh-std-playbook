@@ -1,0 +1,91 @@
+# Apache configuration for {{ server_hostname }}
+# Managed by Ansible - Environment: {{ server_environment }}
+
+ServerRoot "/etc/httpd"
+Listen 80
+
+Include conf.modules.d/*.conf
+
+User apache
+Group apache
+
+ServerAdmin {{ admin_email }}
+ServerName {{ server_hostname }}:80
+
+<Directory />
+    AllowOverride none
+    Require all denied
+</Directory>
+
+DocumentRoot "/var/www/{{ server_hostname }}/html"
+
+<Directory "/var/www">
+    AllowOverride None
+    Require all granted
+</Directory>
+
+<Directory "/var/www/{{ server_hostname }}/html">
+    Options Indexes FollowSymLinks
+    AllowOverride All
+    Require all granted
+</Directory>
+
+<IfModule dir_module>
+    DirectoryIndex index.html index.php
+</IfModule>
+
+<Files ".ht*">
+    Require all denied
+</Files>
+
+ErrorLog "logs/{{ server_hostname }}-error_log"
+LogLevel warn
+
+<IfModule log_config_module>
+    LogFormat "%h %l %u %t \"%r\" %>s %b \"%{Referer}i\" \"%{User-Agent}i\"" combined
+    LogFormat "%h %l %u %t \"%r\" %>s %b" common
+
+    CustomLog "logs/{{ server_hostname }}-access_log" combined
+</IfModule>
+
+<IfModule mime_module>
+    TypesConfig /etc/mime.types
+    AddType application/x-compress .Z
+    AddType application/x-gzip .gz .tgz
+    AddType text/html .shtml
+    AddOutputFilter INCLUDES .shtml
+</IfModule>
+
+AddDefaultCharset UTF-8
+
+<IfModule mime_magic_module>
+    MIMEMagicFile conf/magic
+</IfModule>
+
+EnableSendfile on
+
+# Security headers
+Header always set X-Frame-Options "SAMEORIGIN"
+Header always set X-Content-Type-Options "nosniff"
+Header always set X-XSS-Protection "1; mode=block"
+
+# Performance settings for {{ server_environment }}
+{% if server_environment == 'production' %}
+KeepAlive On
+MaxKeepAliveRequests 100
+KeepAliveTimeout 5
+
+<IfModule prefork.c>
+    StartServers          8
+    MinSpareServers       5
+    MaxSpareServers      20
+    MaxClients          150
+    MaxRequestsPerChild 1000
+</IfModule>
+{% else %}
+KeepAlive On
+MaxKeepAliveRequests 50
+KeepAliveTimeout 2
+{% endif %}
+
+IncludeOptional conf.d/*.conf

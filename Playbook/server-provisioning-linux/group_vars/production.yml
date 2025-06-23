@@ -1,0 +1,38 @@
+---
+# Production environment settings
+
+firewall_services:
+  production:
+    - ssh
+    - https
+    - http
+
+selinux_state: enforcing
+
+# Production-specific security settings
+ssh_permit_root_login: no
+ssh_password_authentication: no
+ssh_allowed_users: "ansible deploy"
+
+# Monitoring
+monitoring_enabled: true
+alerting_enabled: true
+alert_email: "{{ admin_email }}"
+
+# Backup settings
+backup_enabled: true
+backup_retention_days: 30
+backup_encryption: true
+
+# Logging
+log_level: warning
+log_retention_days: 90
+audit_logging: true
+
+# Resource limits (optimized for production)
+apache_max_clients: 150
+mysql_max_connections: 200
+postgres_max_connections: 200
+
+# Performance tuning
+enable_performance_tuning: true

@@ -1,0 +1,39 @@
+#!/bin/bash
+# System Health Check Script for {{ server_hostname }}
+
+LOG_FILE="/var/log/system-health.log"
+
+echo "=== System Health Check - $(date) ===" >> $LOG_FILE
+
+# CPU Usage
+echo "CPU Usage:" >> $LOG_FILE
+top -bn1 | grep "Cpu(s)" >> $LOG_FILE
+
+# Memory Usage
+echo -e "\nMemory Usage:" >> $LOG_FILE
+free -h >> $LOG_FILE
+
+# Disk Usage
+echo -e "\nDisk Usage:" >> $LOG_FILE
+df -h >> $LOG_FILE
+
+# System Load
+echo -e "\nSystem Load:" >> $LOG_FILE
+uptime >> $LOG_FILE
+
+# Check critical services
+echo -e "\nService Status:" >> $LOG_FILE
+for service in sshd firewalld {% if install_container_tools | default(false) %}podman{% endif %}; do
+    systemctl is-active $service >> $LOG_FILE
+done
+
+# Network connectivity
+echo -e "\nNetwork Status:" >> $LOG_FILE
+ping -c 1 8.8.8.8 > /dev/null 2>&1 && echo "Internet: OK" >> $LOG_FILE || echo "Internet: FAIL" >> $LOG_FILE
+
+{% if server_environment == 'production' %}
+# Alert if issues found
+if grep -q "FAIL" $LOG_FILE; then
+    mail -s "Health Check Alert - {{ server_hostname }}" {{ admin_email }} < $LOG_FILE
+fi
+{% endif %}

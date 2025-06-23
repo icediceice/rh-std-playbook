@@ -1,0 +1,116 @@
+---
+- name: Install essential logging packages
+  yum:
+    name: "{{ logging_packages_essential }}"
+    state: present
+
+- name: Configure rsyslog as central log server
+  template:
+    src: rsyslog-server.conf.j2
+    dest: /etc/rsyslog.conf
+    backup: yes
+  notify: restart rsyslog
+
+- name: Create log storage directories
+  file:
+    path: "/var/log/remote/{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - servers
+    - applications
+    - security
+    - audit
+
+- name: Configure log rotation
+  template:
+    src: logrotate-central.conf.j2
+    dest: /etc/logrotate.d/remote-logs
+
+- name: Install and configure Elasticsearch stack
+  block:
+    - name: Add Elastic repository
+      yum_repository:
+        name: elasticsearch
+        description: Elasticsearch repository
+        baseurl: https://artifacts.elastic.co/packages/7.x/yum
+        gpgcheck: yes
+        gpgkey: https://artifacts.elastic.co/GPG-KEY-elasticsearch
+        enabled: yes
+    
+    - name: Install Elasticsearch stack packages
+      yum:
+        name: "{{ logging_packages_optional.elk_stack }}"
+        state: present
+    
+    - name: Configure Elasticsearch
+      template:
+        src: elasticsearch.yml.j2
+        dest: /etc/elasticsearch/elasticsearch.yml
+      notify: restart elasticsearch
+    
+    - name: Configure Kibana
+      template:
+        src: kibana.yml.j2
+        dest: /etc/kibana/kibana.yml
+      notify: restart kibana
+    
+    - name: Configure Logstash
+      template:
+        src: logstash.conf.j2
+        dest: /etc/logstash/conf.d/central-logging.conf
+      notify: restart logstash
+    
+    - name: Start and enable Elastic services
+      systemd:
+        name: "{{ item }}"
+        state: started
+        enabled: yes
+      loop:
+        - elasticsearch
+        - kibana
+        - logstash
+  when: 
+    - install_elk_stack | default(false) | bool
+    - server_environment in ['staging', 'production']
+
+- name: Configure firewall for logging services
+  firewalld:
+    port: "{{ item }}"
+    permanent: yes
+    state: enabled
+    immediate: yes
+  loop:
+    - 514/tcp  # rsyslog
+    - 514/udp  # rsyslog
+    - 5601/tcp # Kibana (only if ELK is installed)
+    - 9200/tcp # Elasticsearch (only if ELK is installed)
+  when: enable_firewall | bool
+
+- name: Set up log analysis scripts
+  template:
+    src: "{{ item }}.j2"
+    dest: "/usr/local/bin/{{ item }}"
+    mode: '0755'
+  loop:
+    - daily-log-summary.sh
+    - security-log-check.sh
+    - disk-usage-alert.sh
+
+- name: Schedule log analysis jobs
+  cron:
+    name: "{{ item.name }}"
+    minute: "{{ item.minute }}"
+    hour: "{{ item.hour }}"
+    job: "{{ item.job }}"
+  loop:
+    - name: "Daily log summary"
+      minute: "0"
+      hour: "6"
+      job: "/usr/local/bin/daily-log-summary.sh"
+    - name: "Security log check"
+      minute: "*/30"
+      hour: "*"
+      job: "/usr/local/bin/security-log-check.sh"

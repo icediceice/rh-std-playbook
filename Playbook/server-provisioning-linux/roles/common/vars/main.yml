@@ -1,0 +1,16 @@
+---
+# Variables for common role
+# These should not be overridden
+
+# Essential services
+essential_services:
+  - sshd
+  - firewalld
+  - chronyd
+  - rsyslog
+
+# Common directories
+common_directories:
+  - /opt/scripts
+  - /var/log/custom
+  - /etc/ansible/facts.d

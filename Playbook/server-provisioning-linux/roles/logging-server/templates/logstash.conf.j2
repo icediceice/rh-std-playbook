@@ -1,0 +1,63 @@
+# Logstash configuration for {{ server_hostname }}
+
+input {
+  # Syslog input
+  syslog {
+    port => 5514
+    type => "syslog"
+  }
+  
+  # File input for local logs
+  file {
+    path => "/var/log/messages"
+    type => "system"
+    start_position => "beginning"
+  }
+  
+  # Beats input
+  beats {
+    port => {{ logstash_port }}
+  }
+}
+
+filter {
+  # Parse syslog messages
+  if [type] == "syslog" {
+    grok {
+      match => { "message" => "%{SYSLOGTIMESTAMP:timestamp} %{SYSLOGHOST:hostname} %{DATA:program}(?:\[%{POSINT:pid}\])?: %{GREEDYDATA:message}" }
+      overwrite => [ "message" ]
+    }
+    
+    date {
+      match => [ "timestamp", "MMM  d HH:mm:ss", "MMM dd HH:mm:ss" ]
+    }
+  }
+  
+  # Add environment tag
+  mutate {
+    add_tag => [ "{{ server_environment }}" ]
+    add_field => { "environment" => "{{ server_environment }}" }
+  }
+  
+  # Security event detection
+  if [program] == "sshd" and [message] =~ /Failed password/ {
+    mutate {
+      add_tag => [ "security", "authentication_failure" ]
+    }
+  }
+}
+
+output {
+  # Output to Elasticsearch
+  elasticsearch {
+    hosts => ["{{ ansible_default_ipv4.address }}:{{ elasticsearch_port }}"]
+    index => "logs-%{+YYYY.MM.dd}"
+  }
+  
+  # Console output for debugging
+  {% if server_environment != 'production' %}
+  stdout {
+    codec => rubydebug
+  }
+  {% endif %}
+}

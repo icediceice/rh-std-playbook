@@ -1,0 +1,32 @@
+---
+# Development environment settings
+
+firewall_services:
+  dev:
+    - ssh
+    - cockpit
+    - http
+    - https
+
+selinux_state: permissive
+
+# Development-specific settings
+ssh_permit_root_login: yes
+ssh_password_authentication: yes
+
+# Monitoring
+monitoring_enabled: false
+alerting_enabled: false
+
+# Backup settings
+backup_enabled: false
+backup_retention_days: 7
+
+# Logging
+log_level: debug
+log_retention_days: 7
+
+# Resource limits (relaxed for development)
+apache_max_clients: 50
+mysql_max_connections: 50
+postgres_max_connections: 50

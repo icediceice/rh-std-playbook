@@ -1,0 +1,31 @@
+---
+# Staging environment settings
+
+firewall_services:
+  staging:
+    - ssh
+    - http
+    - https
+
+selinux_state: enforcing
+
+# Staging-specific security settings
+ssh_permit_root_login: no
+ssh_password_authentication: no
+
+# Monitoring
+monitoring_enabled: true
+alerting_enabled: false
+
+# Backup settings
+backup_enabled: true
+backup_retention_days: 14
+
+# Logging
+log_level: info
+log_retention_days: 30
+
+# Resource limits (moderate)
+apache_max_clients: 100
+mysql_max_connections: 100
+postgres_max_connections: 100

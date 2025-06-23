@@ -1,0 +1,25 @@
+---
+# Common variables for all environments
+# Can be overridden in specific environment files
+
+# NTP servers
+ntp_servers:
+  - 0.rhel.pool.ntp.org
+  - 1.rhel.pool.ntp.org
+  - 2.rhel.pool.ntp.org
+
+# Common firewall services
+firewall_services:
+  common:
+    - ssh
+    - cockpit
+
+# SELinux boolean settings
+selinux_booleans:
+  - { name: 'httpd_can_network_connect', state: 'on', persistent: 'yes' }
+  - { name: 'httpd_enable_cgi', state: 'on', persistent: 'yes' }
+
+# System limits
+system_limits:
+  - { domain: '*', limit_type: 'soft', limit_item: 'nofile', value: '65536' }
+  - { domain: '*', limit_type: 'hard', limit_item: 'nofile', value: '65536' }

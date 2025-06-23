@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ server_hostname }} - {{ server_role | title }} Server</title>
+    <style>
+        body {
+            font-family: 'Red Hat Display', Arial, sans-serif;
+            background-color: #f5f5f5;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .container {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 40px;
+            max-width: 600px;
+            width: 90%;
+        }
+        h1 {
+            color: #ee0000;
+            margin: 0 0 20px 0;
+        }
+        .info {
+            background-color: #f8f8f8;
+            border-left: 4px solid #ee0000;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .info p {
+            margin: 5px 0;
+            color: #333;
+        }
+        .status {
+            color: #28a745;
+            font-weight: bold;
+        }
+        .environment {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+        .environment.dev { background-color: #17a2b8; color: white; }
+        .environment.staging { background-color: #ffc107; color: black; }
+        .environment.production { background-color: #dc3545; color: white; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>{{ server_hostname }}</h1>
+        <p class="status">✓ Server Successfully Provisioned</p>
+        
+        <div class="info">
+            <p><strong>Server Role:</strong> {{ server_role | title }}</p>
+            <p><strong>Operating System:</strong> {{ ansible_distribution }} {{ ansible_distribution_version }}</p>
+            <p><strong>IP Address:</strong> {{ ansible_default_ipv4.address }}</p>
+            <p><strong>Provisioned:</strong> {{ ansible_date_time.iso8601 }}</p>
+        </div>
+        
+        <span class="environment {{ server_environment }}">{{ server_environment | upper }}</span>
+        
+        <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee;">
+            <p style="color: #666; font-size: 14px;">
+                This server is managed by Ansible Automation Platform.<br>
+                For support, contact: {{ admin_email }}
+            </p>
+        </div>
+    </div>
+</body>
+</html>

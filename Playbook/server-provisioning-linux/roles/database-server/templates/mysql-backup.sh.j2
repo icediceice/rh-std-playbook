@@ -1,0 +1,26 @@
+#!/bin/bash
+# MySQL Backup Script for {{ server_hostname }}
+# Environment: {{ server_environment }}
+
+BACKUP_DIR="/var/backups/mysql"
+DATE=$(date +%Y%m%d_%H%M%S)
+RETENTION_DAYS={{ '30' if server_environment == 'production' else '7' }}
+
+# Create backup directory if it doesn't exist
+mkdir -p $BACKUP_DIR
+
+# Get MySQL root password
+MYSQL_PWD=$(cat /tmp/mysql_root_pass)
+
+# Backup all databases
+export MYSQL_PWD
+mysqldump --all-databases --single-transaction --quick --lock-tables=false > $BACKUP_DIR/full-backup-$DATE.sql
+
+# Compress the backup
+gzip $BACKUP_DIR/full-backup-$DATE.sql
+
+# Remove old backups
+find $BACKUP_DIR -name "*.sql.gz" -type f -mtime +$RETENTION_DAYS -delete
+
+# Log the backup
+echo "$(date): MySQL backup completed - full-backup-$DATE.sql.gz" >> $BACKUP_DIR/backup.log

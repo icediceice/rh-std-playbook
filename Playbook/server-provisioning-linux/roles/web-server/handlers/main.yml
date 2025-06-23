@@ -1,0 +1,16 @@
+---
+- name: restart apache
+  systemd:
+    name: httpd
+    state: restarted
+
+- name: reload apache
+  systemd:
+    name: httpd
+    state: reloaded
+
+- name: restart php-fpm
+  systemd:
+    name: php-fpm
+    state: restarted
+  when: "'php' in web_server_type"

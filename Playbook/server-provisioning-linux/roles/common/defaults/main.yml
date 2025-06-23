@@ -1,0 +1,21 @@
+---
+# Default variables for common role
+# These can be overridden at various levels
+
+# System settings
+server_timezone: UTC
+enable_firewall: true
+enable_selinux: true
+enable_auto_updates: true
+
+# Package installation
+install_monitoring_tools: false
+install_security_tools: false
+install_networking_tools: false
+install_development_tools: false
+
+# User settings
+admin_email: "admin@example.com"
+
+# Service settings
+enable_cockpit: false

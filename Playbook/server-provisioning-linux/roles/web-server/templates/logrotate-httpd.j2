@@ -1,0 +1,13 @@
+/var/log/httpd/*log {
+    daily
+    missingok
+    rotate {{ '30' if server_environment == 'production' else '7' }}
+    compress
+    delaycompress
+    notifempty
+    create 640 apache apache
+    sharedscripts
+    postrotate
+        /bin/systemctl reload httpd.service > /dev/null 2>/dev/null || true
+    endscript
+}

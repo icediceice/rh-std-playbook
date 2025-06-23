@@ -1,0 +1,71 @@
+# rsyslog configuration file for {{ server_hostname }}
+# Environment: {{ server_environment }}
+
+# Load modules
+module(load="imuxsock"    # provides support for local system logging (e.g. via logger command)
+       SysSock.Use="off") # Turn off message reception via local log socket;
+                          # local messages are retrieved through imjournal now.
+module(load="imjournal"             # provides access to the systemd journal
+       StateFile="imjournal.state") # File to store the position in the journal
+
+# Include all config files in /etc/rsyslog.d/
+include(file="/etc/rsyslog.d/*.conf" mode="optional")
+
+# Set default permissions for all log files.
+$FileOwner root
+$FileGroup root
+$FileCreateMode 0640
+$DirCreateMode 0755
+$Umask 0022
+
+# Where to place auxiliary files
+$WorkDirectory /var/lib/rsyslog
+
+# Use default timestamp format
+$ActionFileDefaultTemplate RSYSLOG_TraditionalFileFormat
+
+# Log all kernel messages to the console.
+kern.*                                                 /dev/console
+
+# Log anything (except mail) of level info or higher.
+*.info;mail.none;authpriv.none;cron.none                /var/log/messages
+
+# The authpriv file has restricted access.
+authpriv.*                                              /var/log/secure
+
+# Log all the mail messages in one place.
+mail.*                                                  -/var/log/maillog
+
+# Log cron stuff
+cron.*                                                  /var/log/cron
+
+# Everybody gets emergency messages
+*.emerg                                                 :omusrmsg:*
+
+# Save news errors of level crit and higher in a special file.
+uucp,news.crit                                          /var/log/spooler
+
+# Save boot messages also to boot.log
+local7.*                                                /var/log/boot.log
+
+{% if server_environment in ['staging', 'production'] %}
+# Forward logs to central logging server if configured
+{% if logging_server is defined %}
+*.* @@{{ logging_server }}:514
+{% endif %}
+{% endif %}
+
+{% if server_environment == 'production' %}
+# Enhanced logging for production
+$template RemoteHost,"/var/log/remote/%HOSTNAME%/%PROGRAMNAME%.log"
+*.* ?RemoteHost
+
+# Audit trail
+$ModLoad imfile
+$InputFileName /var/log/audit/audit.log
+$InputFileTag audit:
+$InputFileStateFile audit-log
+$InputFileSeverity info
+$InputFileFacility local6
+$InputRunFileMonitor
+{% endif %}

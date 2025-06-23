@@ -1,0 +1,23 @@
+---
+# Ansible collection requirements
+collections:
+  - name: ansible.posix
+    version: ">=1.5.0"
+  - name: community.general
+    version: ">=7.0.0"
+  - name: community.mysql
+    version: ">=3.7.0"
+  - name: community.postgresql
+    version: ">=3.0.0"
+  - name: containers.podman
+    version: ">=1.11.0"
+  - name: redhat.rhel_system_roles
+    version: ">=1.21.0"
+
+# Python package requirements (for controller node)
+python_requirements:
+  - ansible>=2.15
+  - jinja2>=3.0
+  - PyYAML>=6.0
+  - netaddr
+  - dnspython

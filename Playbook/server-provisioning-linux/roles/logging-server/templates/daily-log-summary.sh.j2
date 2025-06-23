@@ -1,0 +1,27 @@
+#!/bin/bash
+# Daily Log Summary Script for {{ server_hostname }}
+
+REPORT_FILE="/var/log/daily-summary-$(date +%Y%m%d).log"
+EMAIL="{{ admin_email }}"
+
+echo "Daily Log Summary for {{ server_hostname }} - $(date)" > $REPORT_FILE
+echo "=================================================" >> $REPORT_FILE
+
+# Error summary
+echo -e "\n## Error Summary" >> $REPORT_FILE
+grep -i "error" /var/log/remote/*/*.log | wc -l >> $REPORT_FILE
+
+# Authentication failures
+echo -e "\n## Authentication Failures" >> $REPORT_FILE
+grep "Failed password" /var/log/remote/security/sshd.log | wc -l >> $REPORT_FILE
+
+# Disk usage
+echo -e "\n## Disk Usage" >> $REPORT_FILE
+df -h >> $REPORT_FILE
+
+# Top log files by size
+echo -e "\n## Largest Log Files" >> $REPORT_FILE
+find /var/log/remote -type f -name "*.log" -exec ls -lh {} \; | sort -k5 -hr | head -10 >> $REPORT_FILE
+
+# Send email report
+mail -s "Daily Log Summary - {{ server_hostname }}" $EMAIL < $REPORT_FILE

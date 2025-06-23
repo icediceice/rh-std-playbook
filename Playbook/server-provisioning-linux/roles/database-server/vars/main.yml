@@ -1,0 +1,14 @@
+---
+# Variables for database-server role
+
+# MySQL configuration parameters
+mysql_config_params:
+  innodb_buffer_pool_size: "{{ (ansible_memtotal_mb * 0.5) | int }}M"
+  innodb_log_file_size: "256M"
+  max_connections: "{{ mysql_max_connections | default(150) }}"
+
+# PostgreSQL configuration parameters
+postgresql_config_params:
+  shared_buffers: "{{ (ansible_memtotal_mb * 0.25) | int }}MB"
+  effective_cache_size: "{{ (ansible_memtotal_mb * 0.75) | int }}MB"
+  work_mem: "4MB"

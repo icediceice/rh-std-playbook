@@ -1,0 +1,19 @@
+---
+- name: restart rsyslog
+  systemd:
+    name: rsyslog
+    state: restarted
+
+- name: restart firewalld
+  systemd:
+    name: firewalld
+    state: restarted
+
+- name: restart chronyd
+  systemd:
+    name: chronyd
+    state: restarted
+
+- name: reload systemd
+  systemd:
+    daemon_reload: yes

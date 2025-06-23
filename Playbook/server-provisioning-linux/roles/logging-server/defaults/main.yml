@@ -1,0 +1,19 @@
+---
+# Default variables for logging-server role
+
+# Logging settings
+central_log_dir: /var/log/remote
+log_retention_days: 30
+enable_compression: true
+
+# ELK stack settings
+install_elk_stack: false
+elasticsearch_heap_size: "1g"
+elasticsearch_port: 9200
+kibana_port: 5601
+logstash_port: 5044
+
+# Alert settings
+enable_log_alerts: true
+alert_email: "{{ admin_email }}"
+disk_usage_threshold: 80

@@ -1,0 +1,90 @@
+---
+- name: Install essential web server packages
+  yum:
+    name: "{{ web_packages_essential }}"
+    state: present
+
+- name: Install PHP packages if requested
+  yum:
+    name: "{{ web_packages_optional.php }}"
+    state: present
+  when: install_php | default(false) | bool
+
+- name: Install Python WSGI if requested
+  yum:
+    name: "{{ web_packages_optional.python }}"
+    state: present
+  when: install_python_wsgi | default(false) | bool
+
+- name: Configure Apache
+  template:
+    src: httpd.conf.j2
+    dest: /etc/httpd/conf/httpd.conf
+    backup: yes
+  notify: restart apache
+
+- name: Create web root directory
+  file:
+    path: /var/www/{{ server_hostname }}/html
+    state: directory
+    owner: apache
+    group: apache
+    mode: '0755'
+
+- name: Deploy default index page
+  template:
+    src: index.html.j2
+    dest: /var/www/{{ server_hostname }}/html/index.html
+    owner: apache
+    group: apache
+    mode: '0644'
+
+- name: Configure SSL/TLS
+  block:
+    - name: Generate self-signed certificate
+      command: |
+        openssl req -x509 -nodes -days 365 -newkey rsa:2048 
+        -keyout /etc/pki/tls/private/{{ server_hostname }}.key 
+        -out /etc/pki/tls/certs/{{ server_hostname }}.crt
+        -subj "/C=US/ST=State/L=City/O=Organization/CN={{ server_hostname }}"
+      args:
+        creates: /etc/pki/tls/private/{{ server_hostname }}.key
+    
+    - name: Configure SSL virtual host
+      template:
+        src: ssl.conf.j2
+        dest: /etc/httpd/conf.d/{{ server_hostname }}-ssl.conf
+      notify: restart apache
+
+- name: Configure firewall for web services
+  firewalld:
+    service: "{{ item }}"
+    permanent: yes
+    state: enabled
+    immediate: yes
+  loop:
+    - http
+    - https
+  when: enable_firewall | bool
+
+- name: Set SELinux context for web root
+  sefcontext:
+    target: '/var/www/{{ server_hostname }}(/.*)?'
+    setype: httpd_sys_content_t
+    state: present
+  when: enable_selinux | bool
+
+- name: Apply SELinux context
+  command: restorecon -Rv /var/www/{{ server_hostname }}
+  when: enable_selinux | bool
+
+- name: Start and enable Apache
+  systemd:
+    name: httpd
+    state: started
+    enabled: yes
+
+- name: Configure log rotation
+  template:
+    src: logrotate-httpd.j2
+    dest: /etc/logrotate.d/httpd-{{ server_hostname }}

@@ -1,0 +1,122 @@
+---
+- name: RHEL Server Provisioning Playbook
+  hosts: "{{ target_hosts | default('all') }}"
+  become: yes
+  gather_facts: yes
+  
+  vars:
+    # Survey variables
+    server_environment: "{{ server_environment }}"
+    server_role: "{{ server_role }}"
+    server_hostname: "{{ server_hostname }}"
+    enable_firewall: "{{ enable_firewall | default(true) }}"
+    enable_selinux: "{{ enable_selinux | default(true) }}"
+    
+    # Optional packages from survey
+    install_monitoring_tools: "{{ install_monitoring_tools | default(false) }}"
+    install_security_tools: "{{ install_security_tools | default(false) }}"
+    install_networking_tools: "{{ install_networking_tools | default(false) }}"
+    install_development_tools: "{{ install_development_tools | default(false) }}"
+    install_container_tools: "{{ install_container_tools | default(false) }}"
+    custom_packages: "{{ custom_packages | default('') }}"
+    
+    # Dynamic package lists
+    package_lists_dir: "{{ playbook_dir }}/../package-lists"
+    
+  pre_tasks:
+    - name: Validate RHEL system
+      assert:
+        that:
+          - ansible_os_family == "RedHat"
+          - ansible_distribution == "RedHat"
+          - ansible_distribution_major_version in ["8", "9"]
+        fail_msg: "This playbook only supports RHEL 8 or 9"
+    
+    - name: Load dynamic package lists
+      include_vars:
+        file: "{{ package_lists_dir }}/{{ item }}"
+        name: "{{ item | replace('-packages.yml', '') | replace('-', '_') }}_packages"
+      loop:
+        - common-packages.yml
+        - "{{ server_role }}-packages.yml"
+    
+    - name: Set environment-specific variables
+      include_vars: "{{ playbook_dir }}/../group_vars/{{ server_environment }}.yml"
+    
+    - name: Build optional package list
+      set_fact:
+        optional_packages_to_install: []
+    
+    - name: Add monitoring tools if selected
+      set_fact:
+        optional_packages_to_install: "{{ optional_packages_to_install + common_packages_optional.monitoring }}"
+      when: install_monitoring_tools | bool
+    
+    - name: Add security tools if selected
+      set_fact:
+        optional_packages_to_install: "{{ optional_packages_to_install + common_packages_optional.security }}"
+      when: install_security_tools | bool
+    
+    - name: Add networking tools if selected
+      set_fact:
+        optional_packages_to_install: "{{ optional_packages_to_install + common_packages_optional.networking }}"
+      when: install_networking_tools | bool
+    
+    - name: Add development tools if selected
+      set_fact:
+        optional_packages_to_install: "{{ optional_packages_to_install + common_packages_optional.development }}"
+      when: install_development_tools | bool
+    
+    - name: Add container tools if selected
+      set_fact:
+        optional_packages_to_install: "{{ optional_packages_to_install + general_packages_optional.containers }}"
+      when: 
+        - install_container_tools | bool
+        - server_role == 'general'
+    
+    - name: Display provisioning information
+      debug:
+        msg: |
+          Starting RHEL Server Provisioning:
+          - Hostname: {{ server_hostname }}
+          - Environment: {{ server_environment }}
+          - Role: {{ server_role }}
+          - RHEL Version: {{ ansible_distribution_version }}
+          - Essential packages will be installed
+          - Optional packages: {{ optional_packages_to_install | length }} selected
+
+  roles:
+    - role: common
+      tags: ['common', 'always']
+    
+    - role: "{{ server_role }}-server"
+      tags: ['role-specific']
+
+  post_tasks:
+    - name: Install selected optional packages
+      yum:
+        name: "{{ optional_packages_to_install }}"
+        state: present
+      when: optional_packages_to_install | length > 0
+    
+    - name: Install custom packages if specified
+      yum:
+        name: "{{ custom_packages.split(',') | map('trim') | reject('equalto', '') | list }}"
+        state: present
+      when: custom_packages != ''
+    
+    - name: Run validation playbook
+      include_tasks: "{{ playbook_dir }}/validate-server.yml"
+      tags: ['validation']
+    
+    - name: Display completion message
+      debug:
+        msg: |
+          Server provisioning completed successfully!
+          - Hostname: {{ server_hostname }}
+          - Role: {{ server_role }}
+          - Environment: {{ server_environment }}
+          - Essential packages: Installed
+          - Optional packages: {{ optional_packages_to_install | length }} installed
+          - Custom packages: {{ custom_packages.split(',') | map('trim') | reject('equalto', '') | list | length }} installed
+          - Access the server at: {{ ansible_default_ipv4.address }}

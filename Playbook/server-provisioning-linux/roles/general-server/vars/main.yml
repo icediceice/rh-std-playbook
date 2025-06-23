@@ -1,0 +1,16 @@
+---
+# Variables for general-server role
+
+# Container registries
+container_registries:
+  - registry.redhat.io
+  - registry.access.redhat.com
+  - quay.io
+  - docker.io
+
+# System utilities
+system_utilities:
+  - htop
+  - iotop
+  - ncdu
+  - tmux

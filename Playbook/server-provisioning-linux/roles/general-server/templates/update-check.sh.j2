@@ -1,0 +1,45 @@
+#!/bin/bash
+# Update Check Script for {{ server_hostname }}
+# Checks for available system updates
+
+LOG_FILE="/var/log/update-check.log"
+EMAIL="{{ admin_email }}"
+
+echo "System Update Check - $(date)" > $LOG_FILE
+echo "===============================" >> $LOG_FILE
+
+# Check for available updates
+echo -e "\nChecking for available updates..." >> $LOG_FILE
+yum check-update >> $LOG_FILE 2>&1
+UPDATE_COUNT=$(yum check-update 2>/dev/null | grep -v "Loaded plugins" | wc -l)
+
+echo -e "\nTotal updates available: $UPDATE_COUNT" >> $LOG_FILE
+
+# Check for security updates
+SECURITY_UPDATES=$(yum --security check-update 2>/dev/null | grep -c "security")
+echo "Security updates available: $SECURITY_UPDATES" >> $LOG_FILE
+
+# Check for kernel updates
+KERNEL_UPDATE=$(yum check-update kernel 2>/dev/null | grep -c kernel)
+if [ $KERNEL_UPDATE -gt 0 ]; then
+    echo -e "\nWARNING: Kernel update available - reboot will be required" >> $LOG_FILE
+fi
+
+# List package updates
+if [ $UPDATE_COUNT -gt 0 ]; then
+    echo -e "\nAvailable updates:" >> $LOG_FILE
+    yum check-update 2>/dev/null | grep -v "Loaded plugins" >> $LOG_FILE
+fi
+
+# System information
+echo -e "\nSystem Information:" >> $LOG_FILE
+echo "Current kernel: $(uname -r)" >> $LOG_FILE
+echo "Uptime: $(uptime)" >> $LOG_FILE
+echo "Last update: $(rpm -qa --last | head -1)" >> $LOG_FILE
+
+# Send notification if updates are available
+if [ $UPDATE_COUNT -gt 0 ] || [ $SECURITY_UPDATES -gt 0 ]; then
+    mail -s "Update Check - {{ server_hostname }} - $UPDATE_COUNT updates available" $EMAIL < $LOG_FILE
+fi
+
+echo -e "\nCheck completed at $(date)" >> $LOG_FILE

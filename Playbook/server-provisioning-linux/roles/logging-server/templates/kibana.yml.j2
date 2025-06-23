@@ -1,0 +1,26 @@
+# Kibana configuration for {{ server_hostname }}
+# Environment: {{ server_environment }}
+
+server.port: {{ kibana_port }}
+server.host: "{{ ansible_default_ipv4.address }}"
+server.name: "{{ server_hostname }}"
+
+elasticsearch.hosts: ["http://{{ ansible_default_ipv4.address }}:{{ elasticsearch_port }}"]
+
+{% if server_environment == 'production' %}
+# Security settings
+elasticsearch.username: "kibana_system"
+elasticsearch.password: "${KIBANA_PASSWORD}"
+server.ssl.enabled: true
+server.ssl.certificate: /etc/kibana/certs/kibana.crt
+server.ssl.key: /etc/kibana/certs/kibana.key
+{% endif %}
+
+# Logging
+logging.dest: /var/log/kibana/kibana.log
+logging.verbose: {{ 'false' if server_environment == 'production' else 'true' }}
+
+# Other settings
+server.maxPayloadBytes: 10485760
+elasticsearch.requestTimeout: 90000
+elasticsearch.shardTimeout: 60000

@@ -1,0 +1,65 @@
+# /etc/ntp.conf - Ansible Managed
+# {{ ansible_managed }}
+
+# Drift file location
+driftfile /var/lib/ntp/drift
+
+# Leap seconds definition provided by tzdata
+leapfile /usr/share/zoneinfo/leap-seconds.list
+
+# Enable this if you want statistics to be logged
+#statsdir /var/log/ntpstats/
+
+statistics loopstats peerstats clockstats
+filegen loopstats file loopstats type day enable
+filegen peerstats file peerstats type day enable
+filegen clockstats file clockstats type day enable
+
+# NTP Servers
+{% for server in ntp_servers %}
+server {{ server }} iburst
+{% endfor %}
+
+# Use servers from the NTP Pool Project
+# Please consider joining the pool (http://www.pool.ntp.org/join.html)
+pool 0.ubuntu.pool.ntp.org iburst
+pool 1.ubuntu.pool.ntp.org iburst
+pool 2.ubuntu.pool.ntp.org iburst
+pool 3.ubuntu.pool.ntp.org iburst
+
+# Use Ubuntu's ntp server as a fallback
+pool ntp.ubuntu.com
+
+# Access control configuration
+# Restrict default
+restrict -4 default kod notrap nomodify nopeer noquery limited
+restrict -6 default kod notrap nomodify nopeer noquery limited
+
+# Local users may interrogate the ntp server more closely
+restrict 127.0.0.1
+restrict ::1
+
+# Needed for adding pool entries
+restrict source notrap nomodify noquery
+
+# Clients from this (example!) subnet have unlimited access, but only if
+# cryptographically authenticated
+#restrict 192.168.123.0 mask 255.255.255.0 notrust
+
+# If you want to provide time to the local subnet, change the next line
+# (Again, the address is an example, and you should change it to match your subnet)
+#broadcast 192.168.123.255
+
+# If you want to listen to time broadcasts on your local subnet, de-comment the
+# next lines. Please do this only if you trust everybody on the network!
+#disable auth
+#broadcastclient
+
+# Authentication delay
+{% if server_environment == 'production' %}
+# Production: Stricter authentication settings
+tinker panic 0
+{% else %}
+# Development/Staging: More lenient settings
+tinker panic 1000
+{% endif %}

@@ -1,0 +1,23 @@
+---
+# Default variables for database-server role
+
+# Database selection
+database_type: mysql
+
+# MySQL settings
+mysql_root_password_file: /tmp/mysql_root_pass
+mysql_bind_address: "0.0.0.0"
+mysql_port: 3306
+mysql_datadir: /var/lib/mysql
+
+# PostgreSQL settings
+postgresql_version: "13"
+postgresql_data_dir: /var/lib/pgsql/data
+postgresql_port: 5432
+postgresql_max_connections: 100
+
+# Backup settings
+enable_backups: false
+backup_retention_days: 7
+backup_time_hour: "2"
+backup_time_minute: "0"

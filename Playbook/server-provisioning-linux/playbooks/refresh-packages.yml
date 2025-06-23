@@ -1,0 +1,213 @@
+---
+- name: Refresh Dynamic Package Lists
+  hosts: localhost
+  gather_facts: no
+  
+  vars:
+    package_lists_dir: "{{ playbook_dir }}/../package-lists"
+    rhel_versions: ['8', '9']
+  
+  tasks:
+    - name: Ensure package lists directory exists
+      file:
+        path: "{{ package_lists_dir }}"
+        state: directory
+    
+    - name: Update common packages list
+      copy:
+        dest: "{{ package_lists_dir }}/common-packages.yml"
+        content: |
+          ---
+          # Essential common packages for all server roles
+          # Last updated: {{ ansible_date_time.iso8601 }}
+          
+          common_packages_essential:
+            - vim-enhanced
+            - wget
+            - curl
+            - bind-utils
+            - firewalld
+            - rsyslog
+            - chrony
+            - tmux
+            - policycoreutils-python-utils
+          
+          # Optional packages - displayed in survey for user selection
+          common_packages_optional:
+            monitoring:
+              - cockpit
+              - cockpit-system
+              - sysstat
+              - iotop
+              - htop
+            
+            security:
+              - fail2ban
+              - aide
+              - rkhunter
+              - audit
+            
+            networking:
+              - net-tools
+              - tcpdump
+              - telnet
+              - traceroute
+              - nmap
+            
+            development:
+              - git
+              - python3-pip
+              - python3-devel
+              - gcc
+              - make
+    
+    - name: Update web server packages list
+      copy:
+        dest: "{{ package_lists_dir }}/web-packages.yml"
+        content: |
+          ---
+          # Essential web server packages
+          # Last updated: {{ ansible_date_time.iso8601 }}
+          
+          web_packages_essential:
+            - httpd
+            - mod_ssl
+          
+          # Optional packages - displayed in survey for user selection
+          web_packages_optional:
+            security:
+              - mod_security
+              - mod_evasive
+              - certbot
+              - python3-certbot-apache
+            
+            php:
+              - php
+              - php-cli
+              - php-common
+              - php-fpm
+              - php-mysqlnd
+              - php-opcache
+              - php-gd
+              - php-xml
+              - php-mbstring
+              - php-json
+            
+            python:
+              - python3-mod_wsgi
+              - python3-flask
+              - python3-django
+            
+            performance:
+              - memcached
+              - redis
+              - varnish
+    
+    - name: Update database server packages list
+      copy:
+        dest: "{{ package_lists_dir }}/database-packages.yml"
+        content: |
+          ---
+          # Essential database server packages
+          # Last updated: {{ ansible_date_time.iso8601 }}
+          
+          database_packages_essential:
+            mysql:
+              - mysql-server
+              - mysql
+              - python3-PyMySQL
+            
+            postgresql:
+              - postgresql-server
+              - postgresql
+              - python3-psycopg2
+          
+          # Optional packages - displayed in survey for user selection
+          database_packages_optional:
+            mysql_tools:
+              - mysql-devel
+              - percona-toolkit
+              - mytop
+            
+            postgresql_tools:
+              - postgresql-contrib
+              - pgadmin4
+            
+            backup:
+              - mariadb-backup
+    
+    - name: Update logging server packages list
+      copy:
+        dest: "{{ package_lists_dir }}/logging-packages.yml"
+        content: |
+          ---
+          # Essential logging server packages
+          # Last updated: {{ ansible_date_time.iso8601 }}
+          
+          logging_packages_essential:
+            - rsyslog
+            - logrotate
+            - logwatch
+          
+          # Optional packages - displayed in survey for user selection
+          logging_packages_optional:
+            enhanced_rsyslog:
+              - rsyslog-elasticsearch
+              - rsyslog-mmjsonparse
+              - rsyslog-mmutf8fix
+            
+            elk_stack:
+              - elasticsearch
+              - kibana
+              - logstash
+              - filebeat
+              - java-11-openjdk
+            
+            analysis:
+              - multitail
+              - goaccess
+    
+    - name: Update general server packages list
+      copy:
+        dest: "{{ package_lists_dir }}/general-packages.yml"
+        content: |
+          ---
+          # Essential general purpose server packages
+          # Last updated: {{ ansible_date_time.iso8601 }}
+          
+          general_packages_essential:
+            - screen
+            - rsync
+            - zip
+            - unzip
+          
+          # Optional packages - displayed in survey for user selection
+          general_packages_optional:
+            containers:
+              - podman
+              - podman-compose
+              - buildah
+              - skopeo
+              - container-selinux
+            
+            development:
+              - nodejs
+              - npm
+              - python3-virtualenv
+              - golang
+            
+            utilities:
+              - mlocate
+              - tree
+              - jq
+              - bc
+              - dos2unix
+            
+            networking:
+              - iperf3
+              - netcat
+              - whois
+    
+    - name: Display refresh status
+      debug:
+        msg: "Package lists have been refreshed at {{ ansible_date_time.iso8601 }}"

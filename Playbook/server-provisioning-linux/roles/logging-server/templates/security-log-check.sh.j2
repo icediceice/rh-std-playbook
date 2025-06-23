@@ -1,0 +1,51 @@
+#!/bin/bash
+# Security Log Check Script for {{ server_hostname }}
+# Checks for security events and alerts if necessary
+
+LOG_DIR="/var/log/remote/security"
+REPORT_FILE="/var/log/security-check-$(date +%Y%m%d-%H%M).log"
+ALERT_EMAIL="{{ admin_email }}"
+ALERT_THRESHOLD=10
+
+echo "Security Log Check - $(date)" > $REPORT_FILE
+echo "================================" >> $REPORT_FILE
+
+# Check for authentication failures
+AUTH_FAILURES=$(grep -i "failed password\|authentication failure" $LOG_DIR/*.log 2>/dev/null | wc -l)
+echo "Authentication failures: $AUTH_FAILURES" >> $REPORT_FILE
+
+if [ $AUTH_FAILURES -gt $ALERT_THRESHOLD ]; then
+    echo "WARNING: High number of authentication failures detected!" >> $REPORT_FILE
+fi
+
+# Check for privilege escalation attempts
+PRIV_ESC=$(grep -i "sudo.*incorrect password\|su.*failed" $LOG_DIR/*.log 2>/dev/null | wc -l)
+echo "Privilege escalation attempts: $PRIV_ESC" >> $REPORT_FILE
+
+# Check for SSH brute force attempts
+SSH_ATTEMPTS=$(grep "Invalid user" $LOG_DIR/sshd.log 2>/dev/null | wc -l)
+echo "SSH invalid user attempts: $SSH_ATTEMPTS" >> $REPORT_FILE
+
+# Check for SELinux denials
+if [ -f /var/log/audit/audit.log ]; then
+    SELINUX_DENIALS=$(grep "denied" /var/log/audit/audit.log | wc -l)
+    echo "SELinux denials: $SELINUX_DENIALS" >> $REPORT_FILE
+fi
+
+# Check for firewall blocks
+FIREWALL_BLOCKS=$(grep "REJECT\|DROP" /var/log/messages | wc -l)
+echo "Firewall blocks: $FIREWALL_BLOCKS" >> $REPORT_FILE
+
+# List top 10 IP addresses with failed attempts
+echo -e "\nTop 10 IPs with failed attempts:" >> $REPORT_FILE
+grep -h "Failed password" $LOG_DIR/*.log 2>/dev/null | \
+    grep -oE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b" | \
+    sort | uniq -c | sort -rn | head -10 >> $REPORT_FILE
+
+# Send alert if necessary
+if [ $AUTH_FAILURES -gt $ALERT_THRESHOLD ] || [ $PRIV_ESC -gt 5 ] || [ $SSH_ATTEMPTS -gt 20 ]; then
+    mail -s "SECURITY ALERT - {{ server_hostname }}" $ALERT_EMAIL < $REPORT_FILE
+fi
+
+# Log completion
+echo -e "\nCheck completed at $(date)" >> $REPORT_FILE

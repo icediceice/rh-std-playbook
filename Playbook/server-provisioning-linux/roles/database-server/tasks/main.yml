@@ -1,0 +1,125 @@
+---
+- name: Install MySQL packages
+  yum:
+    name: "{{ database_packages_essential.mysql }}"
+    state: present
+  when: database_type == 'mysql'
+
+- name: Install PostgreSQL packages  
+  yum:
+    name: "{{ database_packages_essential.postgresql }}"
+    state: present
+  when: database_type == 'postgresql'
+
+- name: Configure MySQL
+  block:
+    - name: Start MySQL service
+      systemd:
+        name: mysqld
+        state: started
+        enabled: yes
+    
+    - name: Get temporary root password
+      shell: "grep 'temporary password' /var/log/mysqld.log | awk '{print $NF}'"
+      register: mysql_temp_pass
+      changed_when: false
+      failed_when: false
+    
+    - name: Set MySQL root password
+      mysql_user:
+        name: root
+        password: "{{ lookup('password', '/tmp/mysql_root_pass length=16 chars=ascii_letters,digits') }}"
+        login_unix_socket: /var/lib/mysql/mysql.sock
+      when: mysql_temp_pass.stdout != ""
+    
+    - name: Configure MySQL
+      template:
+        src: my.cnf.j2
+        dest: /etc/my.cnf.d/server.cnf
+      notify: restart mysql
+    
+    - name: Create database backup directory
+      file:
+        path: /var/backups/mysql
+        state: directory
+        owner: mysql
+        group: mysql
+        mode: '0750'
+    
+    - name: Configure MySQL backup script
+      template:
+        src: mysql-backup.sh.j2
+        dest: /usr/local/bin/mysql-backup.sh
+        mode: '0750'
+        owner: root
+        group: root
+    
+    - name: Schedule MySQL backups
+      cron:
+        name: "MySQL daily backup"
+        minute: "0"
+        hour: "2"
+        job: "/usr/local/bin/mysql-backup.sh"
+      when: enable_backups | bool
+  when: database_type == 'mysql'
+
+- name: Configure PostgreSQL
+  block:
+    - name: Initialize PostgreSQL database
+      command: postgresql-setup --initdb
+      args:
+        creates: /var/lib/pgsql/data/PG_VERSION
+    
+    - name: Configure PostgreSQL
+      template:
+        src: postgresql.conf.j2
+        dest: /var/lib/pgsql/data/postgresql.conf
+      notify: restart postgresql
+    
+    - name: Configure PostgreSQL authentication
+      template:
+        src: pg_hba.conf.j2
+        dest: /var/lib/pgsql/data/pg_hba.conf
+      notify: restart postgresql
+    
+    - name: Start PostgreSQL service
+      systemd:
+        name: postgresql
+        state: started
+        enabled: yes
+    
+    - name: Create database backup directory
+      file:
+        path: /var/backups/postgresql  
+        state: directory
+        owner: postgres
+        group: postgres
+        mode: '0750'
+    
+    - name: Configure PostgreSQL backup script
+      template:
+        src: postgresql-backup.sh.j2
+        dest: /usr/local/bin/postgresql-backup.sh
+        mode: '0750'
+        owner: postgres
+        group: postgres
+    
+    - name: Schedule PostgreSQL backups
+      cron:
+        name: "PostgreSQL daily backup"
+        minute: "0"
+        hour: "2"
+        job: "/usr/local/bin/postgresql-backup.sh"
+        user: postgres
+      when: enable_backups | bool
+  when: database_type == 'postgresql'
+
+- name: Configure firewall for database
+  firewalld:
+    port: "{{ item }}"
+    permanent: yes
+    state: enabled
+    immediate: yes
+  loop:
+    - "{{ '3306/tcp' if database_type == 'mysql' else '5432/tcp' }}"
+  when: enable_firewall | bool

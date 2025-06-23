@@ -1,0 +1,15 @@
+---
+# Default variables for general-server role
+
+# Container settings
+install_container_tools: false
+enable_rootless_containers: true
+container_storage_driver: overlay
+
+# System settings
+enable_system_monitoring: false
+enable_automatic_backups: false
+
+# Development settings
+install_development_langs: false
+development_languages: []

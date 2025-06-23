@@ -1,0 +1,102 @@
+---
+- name: Set system hostname
+  hostname:
+    name: "{{ server_hostname }}"
+
+- name: Update /etc/hosts
+  lineinfile:
+    path: /etc/hosts
+    regexp: '^127\.0\.0\.1'
+    line: "127.0.0.1   localhost localhost.localdomain {{ server_hostname.split('.')[0] }} {{ server_hostname }}"
+
+- name: Set timezone
+  timezone:
+    name: "{{ server_timezone | default('UTC') }}"
+
+- name: Enable RHEL subscription
+  rhsm_repository:
+    name: "*"
+    state: enabled
+  when: ansible_distribution == "RedHat"
+
+- name: Update all packages
+  yum:
+    name: "*"
+    state: latest
+    update_cache: yes
+
+- name: Install essential common packages
+  yum:
+    name: "{{ common_packages_essential }}"
+    state: present
+
+- name: Configure firewalld
+  block:
+    - name: Ensure firewalld is installed and started
+      systemd:
+        name: firewalld
+        state: started
+        enabled: yes
+    
+    - name: Configure firewall for environment
+      firewalld:
+        service: "{{ item }}"
+        permanent: yes
+        state: enabled
+        immediate: yes
+      loop: "{{ firewall_services[server_environment] }}"
+  when: enable_firewall | bool
+
+- name: Configure SELinux
+  selinux:
+    policy: targeted
+    state: "{{ 'enforcing' if enable_selinux | bool else 'permissive' }}"
+
+- name: Configure automatic updates
+  block:
+    - name: Install dnf-automatic
+      yum:
+        name: dnf-automatic
+        state: present
+    
+    - name: Configure dnf-automatic
+      ini_file:
+        path: /etc/dnf/automatic.conf
+        section: commands
+        option: "{{ item.option }}"
+        value: "{{ item.value }}"
+      loop:
+        - { option: "upgrade_type", value: "security" }
+        - { option: "apply_updates", value: "yes" }
+    
+    - name: Enable dnf-automatic timer
+      systemd:
+        name: dnf-automatic.timer
+        state: started
+        enabled: yes
+  when: enable_auto_updates | bool
+
+- name: Configure system logging
+  template:
+    src: rsyslog.conf.j2
+    dest: /etc/rsyslog.conf
+    backup: yes
+  notify: restart rsyslog
+
+- name: Configure chrony for time synchronization
+  template:
+    src: chrony.conf.j2
+    dest: /etc/chrony.conf
+    backup: yes
+  notify: restart chronyd
+
+- name: Start and enable chrony
+  systemd:
+    name: chronyd
+    state: started
+    enabled: yes
+
+- name: Create MOTD
+  template:
+    src: motd.j2
+    dest: /etc/motd
