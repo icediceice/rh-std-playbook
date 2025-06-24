@@ -1,17 +1,24 @@
 [
-  // ...existing survey questions...
+  {
+    "variable": "survey_mode",
+    "question_name": "How do you want to provide variables?",
+    "type": "multiplechoice",
+    "choices": ["Prompt me every time (survey)", "Use prefilled vars file if available"],
+    "required": true
+  },
   {
     "variable": "save_prefilled_vars",
     "question_name": "Save these answers to a prefilled file for future reuse?",
     "type": "multiplechoice",
     "choices": ["yes", "no"],
-    "required": false
+    "required": false,
+    "when": "survey_mode == 'Prompt me every time (survey)'"
   },
   {
     "variable": "prefilled_vars_file_name",
     "question_name": "Prefilled Vars File Name (if saving)",
     "type": "text",
     "required": false,
-    "when": "save_prefilled_vars == 'yes'"
+    "when": "save_prefilled_vars == 'yes' && survey_mode == 'Prompt me every time (survey)'"
   }
 ]

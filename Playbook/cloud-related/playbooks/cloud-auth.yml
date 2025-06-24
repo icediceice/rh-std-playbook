@@ -1,18 +1,28 @@
 ---
 # Playbook: Authenticate to Cloud Provider
-# Modular, supports AWS, Azure, GCP via survey
+# Modular, supports AWS, Azure, GCP via survey or prefilled vars
 - name: Authenticate to Cloud Provider
   hosts: localhost
   gather_facts: false
   vars_files:
+    - ../prefilled-survey-vars.yml
     - ../surveys/cloud-auth-survey.json
+  pre_tasks:
+    - name: Check if prefilled vars file exists
+      stat:
+        path: ../prefilled-survey-vars.yml
+      register: prefilled_vars_file
+    - name: Include prefilled vars if file exists and user selected it
+      include_vars:
+        file: ../prefilled-survey-vars.yml
+      when: prefilled_vars_file.stat.exists and (survey_mode is defined and survey_mode == 'Use prefilled vars file if available')
   roles:
     - role: cloud_auth
       vars:
         # cloud_provider, credentials, cloud_auth_file, vault_password_file
   tasks:
     - name: Save survey answers to prefilled vars file if requested
-      when: save_prefilled_vars is defined and save_prefilled_vars == 'yes'
+      when: save_prefilled_vars is defined and save_prefilled_vars == 'yes' and (survey_mode is not defined or survey_mode == 'Prompt me every time (survey)')
       copy:
         content: "{{ vars | to_nice_yaml }}"
         dest: "{{ prefilled_vars_file_name | default('prefilled-survey-vars.yml') }}"
