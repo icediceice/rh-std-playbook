@@ -1,0 +1,26 @@
+---
+# Playbook: Provision a Persistent Volume Claim (PVC)
+# This playbook is modular and designed for AAP survey integration
+- name: Provision Cloud PVC
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - ../surveys/provision-pvc-survey.json
+    - ../prefilled-survey-vars.yml
+    - ../cloud_auth.yml
+  pre_tasks:
+    - name: Include cloud authentication vars if available
+      include_vars:
+        file: ../cloud_auth.yml
+      ignore_errors: yes
+  roles:
+    - role: cloud_pvc
+      vars:
+        # Variables will be populated via survey
+        # Example: pvc_name, storage_class, size, access_modes, namespace
+  tasks:
+    - name: Save survey answers to prefilled vars file if requested
+      when: save_prefilled_vars is defined and save_prefilled_vars == 'yes'
+      copy:
+        content: "{{ vars | to_nice_yaml }}"
+        dest: "{{ prefilled_vars_file_name | default('prefilled-survey-vars.yml') }}"

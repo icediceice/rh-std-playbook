@@ -1,0 +1,15 @@
+---
+# Workflow Playbook: Full Cloud Setup
+# This playbook is designed for AAP workflow chaining
+- name: Full Cloud Environment Setup Workflow
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Provision Server
+      import_playbook: provision-server.yml
+    - name: Setup Cloud Environment
+      import_playbook: setup-cloud-env.yml
+    - name: Provision PVC
+      import_playbook: provision-pvc.yml
+    - name: Query Unused Cloud Resources
+      import_playbook: query-unused-resources.yml

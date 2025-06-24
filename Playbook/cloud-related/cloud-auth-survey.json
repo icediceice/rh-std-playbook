@@ -1,0 +1,17 @@
+[
+  // ...existing survey questions...
+  {
+    "variable": "save_prefilled_vars",
+    "question_name": "Save these answers to a prefilled file for future reuse?",
+    "type": "multiplechoice",
+    "choices": ["yes", "no"],
+    "required": false
+  },
+  {
+    "variable": "prefilled_vars_file_name",
+    "question_name": "Prefilled Vars File Name (if saving)",
+    "type": "text",
+    "required": false,
+    "when": "save_prefilled_vars == 'yes'"
+  }
+]

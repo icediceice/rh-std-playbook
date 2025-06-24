@@ -1,0 +1,6 @@
+---
+# defaults file for cloud_server
+server_name: "example-server"
+image_id: "ami-xxxxxxx"
+instance_type: "t2.micro"
+region: "us-east-1"

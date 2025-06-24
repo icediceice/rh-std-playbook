@@ -1,0 +1,77 @@
+[
+  {
+    "variable": "cloud_provider",
+    "question_name": "Cloud Provider",
+    "type": "multiplechoice",
+    "choices": ["aws", "azure", "gcp"],
+    "required": true
+  },
+  {
+    "variable": "pvc_name",
+    "question_name": "PVC/Volume Name",
+    "type": "text",
+    "required": true
+  },
+  {
+    "variable": "size",
+    "question_name": "Size (e.g., 10Gi)",
+    "type": "text",
+    "required": true
+  },
+  {
+    "variable": "region",
+    "question_name": "Region/Zone",
+    "type": "text",
+    "required": true,
+    "when": "cloud_provider == 'aws' or cloud_provider == 'azure' or cloud_provider == 'gcp'"
+  },
+  {
+    "variable": "resource_group",
+    "question_name": "Resource Group (Azure only)",
+    "type": "text",
+    "required": true,
+    "when": "cloud_provider == 'azure'"
+  },
+  {
+    "variable": "gcp_project",
+    "question_name": "GCP Project (GCP only)",
+    "type": "text",
+    "required": true,
+    "when": "cloud_provider == 'gcp'"
+  },
+  {
+    "variable": "storage_class",
+    "question_name": "Storage Class (K8s, AWS, Azure, GCP)",
+    "type": "text",
+    "required": false,
+    "when": "cloud_provider == 'aws' or cloud_provider == 'azure' or cloud_provider == 'gcp'"
+  },
+  {
+    "variable": "access_modes",
+    "question_name": "Access Modes (comma separated, K8s only)",
+    "type": "text",
+    "required": false,
+    "when": "cloud_provider == 'k8s'"
+  },
+  {
+    "variable": "namespace",
+    "question_name": "Namespace (K8s only)",
+    "type": "text",
+    "required": false,
+    "when": "cloud_provider == 'k8s'"
+  },
+  {
+    "variable": "save_prefilled_vars",
+    "question_name": "Save these answers to a prefilled file for future reuse?",
+    "type": "multiplechoice",
+    "choices": ["yes", "no"],
+    "required": false
+  },
+  {
+    "variable": "prefilled_vars_file_name",
+    "question_name": "Prefilled Vars File Name (if saving)",
+    "type": "text",
+    "required": false,
+    "when": "save_prefilled_vars == 'yes'"
+  }
+]

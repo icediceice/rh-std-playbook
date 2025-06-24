@@ -1,0 +1,39 @@
+---
+# tasks file for cloud_auth
+- name: Set cloud provider fact
+  set_fact:
+    selected_cloud: "{{ cloud_provider | lower }}"
+
+- name: Save cloud credentials (encrypted)
+  ansible.builtin.copy:
+    content: |
+      {% if selected_cloud == 'aws' %}
+        aws_access_key: {{ aws_access_key }}
+        aws_secret_key: {{ aws_secret_key }}
+        aws_session_token: {{ aws_session_token | default('') }}
+        region: {{ region }}
+      {% elif selected_cloud == 'azure' %}
+        azure_client_id: {{ azure_client_id }}
+        azure_secret: {{ azure_secret }}
+        azure_tenant: {{ azure_tenant }}
+        azure_subscription_id: {{ azure_subscription_id }}
+      {% elif selected_cloud == 'gcp' %}
+        gcp_service_account_json: {{ gcp_service_account_json }}
+        gcp_project: {{ gcp_project }}
+      {% endif %}
+    dest: "{{ cloud_auth_file | default('cloud_auth.yml') }}"
+    mode: '0600'
+  no_log: true
+
+- name: Encrypt credentials file with Ansible Vault
+  ansible.builtin.command:
+    cmd: "ansible-vault encrypt {{ cloud_auth_file | default('cloud_auth.yml') }} --vault-password-file {{ vault_password_file | default('vault_pass.txt') }}"
+  args:
+    creates: "{{ cloud_auth_file | default('cloud_auth.yml') }}.vault"
+  when: vault_password_file is defined
+  no_log: true
+
+- name: Display message
+  debug:
+    msg: "Cloud credentials saved and encrypted as {{ cloud_auth_file | default('cloud_auth.yml') }}. Use this file for future authentication."
+# ...existing code...

@@ -1,0 +1,84 @@
+[
+  {
+    "variable": "cloud_provider",
+    "question_name": "Cloud Provider",
+    "type": "multiplechoice",
+    "choices": ["aws", "azure", "gcp"],
+    "required": true
+  },
+  {
+    "variable": "aws_access_key",
+    "question_name": "AWS Access Key",
+    "type": "text",
+    "required": true,
+    "when": "cloud_provider == 'aws'"
+  },
+  {
+    "variable": "aws_secret_key",
+    "question_name": "AWS Secret Key",
+    "type": "password",
+    "required": true,
+    "when": "cloud_provider == 'aws'"
+  },
+  {
+    "variable": "aws_session_token",
+    "question_name": "AWS Session Token (optional)",
+    "type": "text",
+    "required": false,
+    "when": "cloud_provider == 'aws'"
+  },
+  {
+    "variable": "azure_client_id",
+    "question_name": "Azure Client ID",
+    "type": "text",
+    "required": true,
+    "when": "cloud_provider == 'azure'"
+  },
+  {
+    "variable": "azure_secret",
+    "question_name": "Azure Secret",
+    "type": "password",
+    "required": true,
+    "when": "cloud_provider == 'azure'"
+  },
+  {
+    "variable": "azure_tenant",
+    "question_name": "Azure Tenant ID",
+    "type": "text",
+    "required": true,
+    "when": "cloud_provider == 'azure'"
+  },
+  {
+    "variable": "azure_subscription_id",
+    "question_name": "Azure Subscription ID",
+    "type": "text",
+    "required": true,
+    "when": "cloud_provider == 'azure'"
+  },
+  {
+    "variable": "gcp_service_account_json",
+    "question_name": "GCP Service Account JSON (as string)",
+    "type": "textarea",
+    "required": true,
+    "when": "cloud_provider == 'gcp'"
+  },
+  {
+    "variable": "gcp_project",
+    "question_name": "GCP Project",
+    "type": "text",
+    "required": true,
+    "when": "cloud_provider == 'gcp'"
+  },
+  {
+    "variable": "cloud_auth_file",
+    "question_name": "Auth File Name (optional)",
+    "type": "text",
+    "required": false
+  },
+  {
+    "variable": "vault_password_file",
+    "question_name": "Vault Password File (optional, for encryption)",
+    "type": "text",
+    "required": false
+  }
+]

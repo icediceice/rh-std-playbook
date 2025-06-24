@@ -1,0 +1,47 @@
+---
+# tasks file for cloud_network
+- name: Set cloud provider fact
+  set_fact:
+    selected_cloud: "{{ cloud_provider | lower }}"
+
+- name: Setup AWS VPC
+  when: selected_cloud == 'aws'
+  amazon.aws.ec2_vpc_net:
+    name: "{{ vpc_name }}"
+    region: "{{ region }}"
+    cidr_block: "{{ vpc_cidr | default('10.0.0.0/16') }}"
+    state: present
+  register: vpc_result
+
+- name: Setup Azure VNet
+  when: selected_cloud == 'azure'
+  azure.azcollection.azure_vnet:
+    resource_group: "{{ resource_group }}"
+    name: "{{ vpc_name }}"
+    address_prefixes:
+      - "{{ vpc_cidr | default('10.1.0.0/16') }}"
+    location: "{{ region }}"
+    state: present
+  register: vnet_result
+
+- name: Setup GCP VPC
+  when: selected_cloud == 'gcp'
+  google.cloud.gcp_compute_network:
+    name: "{{ vpc_name }}"
+    auto_create_subnetworks: true
+    project: "{{ gcp_project }}"
+    state: present
+  register: gcp_vpc_result
+
+- name: Show result
+  debug:
+    msg: |
+      {% if selected_cloud == 'aws' %}
+        AWS VPC created: {{ vpc_result }}
+      {% elif selected_cloud == 'azure' %}
+        Azure VNet created: {{ vnet_result }}
+      {% elif selected_cloud == 'gcp' %}
+        GCP VPC created: {{ gcp_vpc_result }}
+      {% else %}
+        No valid cloud provider selected.
+      {% endif %}

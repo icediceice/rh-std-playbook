@@ -1,0 +1,68 @@
+[
+  {
+    "variable": "cloud_provider",
+    "question_name": "Cloud Provider",
+    "type": "multiplechoice",
+    "choices": ["aws", "azure", "gcp"],
+    "required": true
+  },
+  {
+    "variable": "vpc_name",
+    "question_name": "VPC/Network Name",
+    "type": "text",
+    "required": true
+  },
+  {
+    "variable": "vpc_cidr",
+    "question_name": "VPC CIDR Block",
+    "type": "text",
+    "required": false
+  },
+  {
+    "variable": "region",
+    "question_name": "Region/Zone",
+    "type": "text",
+    "required": true,
+    "when": "cloud_provider == 'aws' or cloud_provider == 'azure' or cloud_provider == 'gcp'"
+  },
+  {
+    "variable": "resource_group",
+    "question_name": "Resource Group (Azure only)",
+    "type": "text",
+    "required": true,
+    "when": "cloud_provider == 'azure'"
+  },
+  {
+    "variable": "gcp_project",
+    "question_name": "GCP Project (GCP only)",
+    "type": "text",
+    "required": true,
+    "when": "cloud_provider == 'gcp'"
+  },
+  {
+    "variable": "security_group_name",
+    "question_name": "Security Group/Firewall Name",
+    "type": "text",
+    "required": false
+  },
+  {
+    "variable": "security_rules",
+    "question_name": "Security Rules (YAML or JSON)",
+    "type": "textarea",
+    "required": false
+  },
+  {
+    "variable": "save_prefilled_vars",
+    "question_name": "Save these answers to a prefilled file for future reuse?",
+    "type": "multiplechoice",
+    "choices": ["yes", "no"],
+    "required": false
+  },
+  {
+    "variable": "prefilled_vars_file_name",
+    "question_name": "Prefilled Vars File Name (if saving)",
+    "type": "text",
+    "required": false,
+    "when": "save_prefilled_vars == 'yes'"
+  }
+]
