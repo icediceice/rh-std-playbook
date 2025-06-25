@@ -1,0 +1,18 @@
+# Default variables for Fortinet playbooks
+# Compatible with AAP 2.5
+fortinet_hosts: fortinet
+vdom: root
+
+# Connection settings for Fortinet devices
+ansible_connection: httpapi
+ansible_httpapi_use_ssl: yes
+ansible_httpapi_validate_certs: no
+ansible_httpapi_port: 443
+ansible_network_os: fortios
+
+# Default SMTP settings for notifications
+smtp_host: "{{ vault_smtp_host | default('smtp.example.com') }}"
+smtp_port: 587
+smtp_user: "{{ vault_smtp_user | default('smtp_user') }}"
+smtp_pass: "{{ vault_smtp_pass | default('smtp_pass') }}"
+admin_email: "{{ vault_admin_email | default('admin@example.com') }}"

@@ -1,0 +1,8 @@
+{
+  "name": "Check VPN Phase 2 Status Survey",
+  "description": "Survey for customizing VPN Phase 2 status check variables (host list is managed separately).",
+  "questions": [
+    { "variable": "vdom", "type": "text", "question": "Enter VDOM name:", "default": "root" },
+    { "variable": "vpn_name", "type": "text", "question": "Enter VPN name to check:", "default": "vpn1" }
+  ]
+}

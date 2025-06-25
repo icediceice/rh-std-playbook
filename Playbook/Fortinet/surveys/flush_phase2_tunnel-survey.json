@@ -1,0 +1,9 @@
+{
+  "name": "Flush VPN Phase 2 Tunnel Survey",
+  "description": "Survey for customizing Phase 2 tunnel flush variables (host list is managed separately, VPN name selector included).",
+  "questions": [
+    { "variable": "vpn_name", "type": "text", "question": "Enter VPN name to flush Phase 2 tunnels for:", "default": "vpn1" },
+    { "variable": "phase2_name", "type": "text", "question": "Enter Phase 2 tunnel name:", "default": "phase2_tunnel" },
+    { "variable": "vdom", "type": "text", "question": "Enter VDOM name:", "default": "root" }
+  ]
+}

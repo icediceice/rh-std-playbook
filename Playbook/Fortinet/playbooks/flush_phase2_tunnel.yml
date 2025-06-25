@@ -1,0 +1,34 @@
+---
+- name: Flush VPN Phase 2 Tunnel
+  hosts: "{{ fortinet_hosts }}"
+  gather_facts: no
+  connection: httpapi
+  vars:
+    ansible_httpapi_use_ssl: yes
+    ansible_httpapi_validate_certs: no
+    ansible_network_os: fortios
+    vpn_name: "{{ vpn_name | default('vpn1') }}"
+    vdom: "{{ vdom | default('root') }}"
+  tasks:
+    - name: Get VPN Phase 2 tunnels for the VPN
+      fortinet.fortios.fortios_monitor_fact:
+        vdom: "{{ vdom }}"
+        selector: 'vpn_ipsec_stats_crypto'
+      register: vpn_phase2
+
+    - name: Set list of phase2 tunnels related to the VPN
+      set_fact:
+        phase2_names: >-
+          {{ vpn_phase2.meta.results | selectattr('name', 'search', vpn_name) | map(attribute='name') | list | unique }}
+
+    - name: Flush all Phase 2 tunnels for the VPN
+      fortinet.fortios.fortios_vpn_ipsec_phase2_interface:
+        state: "absent"
+        vdom: "{{ vdom }}"
+        name: "{{ item }}"
+      loop: "{{ phase2_names }}"
+      register: flush_result
+
+    - name: Show flush result
+      debug:
+        var: flush_result

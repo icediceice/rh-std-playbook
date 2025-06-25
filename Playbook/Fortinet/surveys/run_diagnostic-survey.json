@@ -1,0 +1,8 @@
+{
+  "name": "Run Diagnostic Survey",
+  "description": "Survey for customizing diagnostic command variables (host list is managed separately).",
+  "questions": [
+    { "variable": "diagnostic_command", "type": "text", "question": "Enter diagnostic command:", "default": "diagnose vpn ike gateway list" },
+    { "variable": "vdom", "type": "text", "question": "Enter VDOM name:", "default": "root" }
+  ]
+}

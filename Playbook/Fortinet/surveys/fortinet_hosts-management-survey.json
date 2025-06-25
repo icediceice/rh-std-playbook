@@ -1,0 +1,7 @@
+{
+  "name": "Fortinet Hosts Management Survey",
+  "description": "Survey for adding or removing Fortinet VA endpoints from the hosts variable. The current value will always be pre-populated so you can add or remove endpoints as needed.",
+  "questions": [
+    { "variable": "fortinet_hosts", "type": "text", "question": "Edit the list of all Fortinet VA endpoints to use (comma separated, e.g., fortinet1,fortinet2,fortinet3):", "default": "{{ fortinet_hosts }}" }
+  ]
+}

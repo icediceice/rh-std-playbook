@@ -1,0 +1,21 @@
+---
+- name: Connect to Fortinet VA and authenticate
+  hosts: "{{ fortinet_hosts }}"
+  gather_facts: no
+  connection: httpapi
+  vars:
+    ansible_httpapi_use_ssl: yes
+    ansible_httpapi_validate_certs: no
+    ansible_network_os: fortios
+    fortinet_username: "{{ fortinet_user | default(ansible_user) }}"
+    fortinet_password: "{{ fortinet_pass | default(ansible_password) }}"
+    vdom: "{{ vdom | default('root') }}"
+  tasks:
+    - name: Authenticate to Fortinet VA
+      fortinet.fortios.fortios_monitor_fact:
+        vdom: "{{ vdom }}"
+        selector: 'system_status'
+      register: login_result
+    - name: Show authentication result
+      debug:
+        var: login_result

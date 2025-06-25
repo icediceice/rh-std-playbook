@@ -1,0 +1,9 @@
+{
+  "name": "Enable Packet Capture Survey",
+  "description": "Survey for customizing packet capture variables (host list is managed separately, interfaces are auto-detected from VPN name).",
+  "questions": [
+    { "variable": "vpn_name", "type": "text", "question": "Enter VPN name to capture packets for:", "default": "vpn1" },
+    { "variable": "capture_filter", "type": "text", "question": "Enter capture filter (optional):", "default": "" },
+    { "variable": "vdom", "type": "text", "question": "Enter VDOM name:", "default": "root" }
+  ]
+}

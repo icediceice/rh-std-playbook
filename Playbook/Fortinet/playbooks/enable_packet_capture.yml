@@ -1,0 +1,38 @@
+---
+- name: Enable Packet Capture on Fortinet VA
+  hosts: "{{ fortinet_hosts }}"
+  gather_facts: no
+  connection: httpapi
+  vars:
+    ansible_httpapi_use_ssl: yes
+    ansible_httpapi_validate_certs: no
+    ansible_network_os: fortios
+    vpn_name: "{{ vpn_name | default('vpn1') }}"
+    filter: "{{ capture_filter | default('') }}"
+    vdom: "{{ vdom | default('root') }}"
+  tasks:
+    - name: Get VPN Phase 2 interfaces for the VPN
+      fortinet.fortios.fortios_monitor_fact:
+        vdom: "{{ vdom }}"
+        selector: 'vpn_ipsec_stats_crypto'
+      register: vpn_phase2
+
+    - name: Set list of interfaces related to the VPN
+      set_fact:
+        vpn_interfaces: >-
+          {{ vpn_phase2.meta.results | selectattr('name', 'search', vpn_name) | map(attribute='interface') | list | unique }}
+
+    - name: Start packet capture on each related interface
+      fortinet.fortios.fortios_system_sniffer:
+        state: "present"
+        vdom: "{{ vdom }}"
+        system_sniffer:
+          name: "capture_{{ item }}_{{ ansible_date_time.epoch }}"
+          interface: "{{ item }}"
+          host: "{{ filter }}"
+      loop: "{{ vpn_interfaces }}"
+      register: capture_result
+
+    - name: Show packet capture result
+      debug:
+        var: capture_result

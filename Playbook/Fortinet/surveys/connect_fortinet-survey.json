@@ -1,0 +1,9 @@
+{
+  "name": "Connect to Fortinet VA Survey",
+  "description": "Survey for customizing Fortinet VA connection variables (host list is managed separately).",
+  "questions": [
+    { "variable": "fortinet_user", "type": "text", "question": "Enter Fortinet username:", "default": "admin" },
+    { "variable": "fortinet_pass", "type": "password", "question": "Enter Fortinet password:", "default": "" },
+    { "variable": "vdom", "type": "text", "question": "Enter VDOM name:", "default": "root" }
+  ]
+}

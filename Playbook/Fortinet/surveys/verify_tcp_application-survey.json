@@ -1,0 +1,8 @@
+{
+  "name": "Verify TCP Application Survey",
+  "description": "Survey for customizing TCP application verification variables (host list is managed separately).",
+  "questions": [
+    { "variable": "app_host", "type": "text", "question": "Enter application host:", "default": "app.example.com" },
+    { "variable": "app_port", "type": "text", "question": "Enter application port:", "default": "80" }
+  ]
+}

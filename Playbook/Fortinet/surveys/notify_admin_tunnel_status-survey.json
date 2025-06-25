@@ -1,0 +1,14 @@
+{
+  "name": "Notify Admin Tunnel Status Survey",
+  "description": "Survey for customizing email notification variables for VPN tunnel status.",
+  "questions": [
+    { "variable": "admin_email", "type": "text", "question": "Enter admin email address:", "default": "admin@example.com" },
+    { "variable": "smtp_host", "type": "text", "question": "Enter SMTP server hostname:", "default": "smtp.example.com" },
+    { "variable": "smtp_port", "type": "text", "question": "Enter SMTP server port:", "default": "587" },
+    { "variable": "smtp_user", "type": "text", "question": "Enter SMTP username:", "default": "smtp_user" },
+    { "variable": "smtp_pass", "type": "password", "question": "Enter SMTP password:", "default": "smtp_pass" },
+    { "variable": "vpn_name", "type": "text", "question": "Enter VPN name:", "default": "vpn1" },
+    { "variable": "vdom", "type": "text", "question": "Enter VDOM name:", "default": "root" },
+    { "variable": "tunnel_status", "type": "text", "question": "Enter tunnel status:", "default": "Unknown" }
+  ]
+}

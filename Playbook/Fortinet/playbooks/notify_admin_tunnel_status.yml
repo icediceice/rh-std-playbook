@@ -1,0 +1,32 @@
+---
+- name: Notify Admin of VPN Tunnel Status
+  hosts: localhost
+  gather_facts: no
+  vars:
+    admin_email: "{{ admin_email | default('admin@example.com') }}"
+    smtp_host: "{{ smtp_host | default('smtp.example.com') }}"
+    smtp_port: "{{ smtp_port | default(587) }}"
+    smtp_user: "{{ smtp_user | default('smtp_user') }}"
+    smtp_pass: "{{ smtp_pass | default('smtp_pass') }}"
+    tunnel_status: "{{ tunnel_status | default('Unknown') }}"
+    vpn_name: "{{ vpn_name | default('vpn1') }}"
+    vdom: "{{ vdom | default('root') }}"
+  tasks:
+    - name: Send email notification to admin
+      community.general.mail:
+        host: "{{ smtp_host }}"
+        port: "{{ smtp_port }}"
+        username: "{{ smtp_user }}"
+        password: "{{ smtp_pass }}"
+        to: "{{ admin_email }}"
+        subject: "VPN Tunnel Status Notification: {{ vpn_name }}"
+        body: |
+          Hello Admin,
+
+          The status of VPN tunnel '{{ vpn_name }}' (VDOM: {{ vdom }}) is: {{ tunnel_status }}
+
+          Timestamp: {{ ansible_date_time.iso8601 }}
+
+          Regards,
+          Ansible Automation Platform
+        secure: starttls

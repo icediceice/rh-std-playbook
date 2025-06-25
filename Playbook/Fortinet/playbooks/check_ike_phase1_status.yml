@@ -1,0 +1,28 @@
+---
+- name: Check IKE Phase 1 Status
+  hosts: "{{ fortinet_hosts }}"
+  gather_facts: no
+  connection: httpapi
+  vars:
+    ansible_httpapi_use_ssl: yes
+    ansible_httpapi_validate_certs: no
+    ansible_network_os: fortios
+    vdom: "{{ vdom | default('root') }}"
+    vpn_name: "{{ vpn_name | default('vpn1') }}"
+  tasks:
+    - name: Get IKE Phase 1 status
+      fortinet.fortios.fortios_monitor_fact:
+        vdom: "{{ vdom }}"
+        selector: 'vpn_ipsec_stats_crypto'
+      register: ike_phase1
+    - name: Show status for specific VPN
+      debug:
+        msg: >
+          {% set phase1 = (ike_phase1.meta.results | selectattr('name', 'search', vpn_name) | list) %}
+          {% if phase1 and phase1[0]['status'] == 'up' %}
+            VPN {{ vpn_name }} Phase 1 is up
+          {% elif phase1 %}
+            VPN {{ vpn_name }} Phase 1 is down
+          {% else %}
+            VPN {{ vpn_name }} Phase 1 not found
+          {% endif %}
