@@ -1,0 +1,33 @@
+---
+# Linux Patching Role Handlers
+# AAP 2.5 compatible handlers for Linux patching operations
+
+- name: set linux reboot required
+  set_fact:
+    patching_reboot_required: true
+
+- name: log patching activity
+  lineinfile:
+    path: /var/log/aap-patching/patching-activity.log
+    line: "{{ ansible_date_time.iso8601 }} - {{ inventory_hostname }} - Patching activity completed"
+    create: yes
+    mode: '0644'
+  become: true
+
+- name: send patch notification
+  mail:
+    to: "{{ notification_email }}"
+    subject: "Patching completed on {{ inventory_hostname }}"
+    body: |
+      Linux patching has completed on {{ inventory_hostname }}.
+      
+      Timestamp: {{ ansible_date_time.iso8601 }}
+      Distribution: {{ ansible_distribution }} {{ ansible_distribution_version }}
+      Reboot Required: {{ patching_reboot_required | default(false) }}
+      
+      Check /var/log/aap-patching/ for detailed logs.
+  when: 
+    - notification_email is defined
+    - notification_email != ""
+  delegate_to: localhost
+  ignore_errors: true

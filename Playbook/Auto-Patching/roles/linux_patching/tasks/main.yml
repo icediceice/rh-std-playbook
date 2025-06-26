@@ -1,4 +1,39 @@
 ---
+# AAP 2.5 Optimized Linux Patching Role
+# Tasks for patching Linux systems (RedHat/Debian families)
+
+- name: Detect Linux distribution family
+  debug:
+    msg: "Detected OS family: {{ ansible_os_family }}, Distribution: {{ ansible_distribution }}"
+
+- name: Validate supported Linux distribution
+  assert:
+    that:
+      - ansible_os_family in ["RedHat", "Debian"]
+    fail_msg: "Unsupported Linux distribution: {{ ansible_distribution }}"
+    success_msg: "Supported Linux distribution detected: {{ ansible_distribution }}"
+
+- name: Create patching directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - /var/log/aap-patching
+    - /tmp/aap-patching-backup
+  become: true
+
+- name: Backup current package list
+  shell: |
+    if [ -f /usr/bin/rpm ]; then
+      rpm -qa | sort > /tmp/aap-patching-backup/packages-before-{{ ansible_date_time.epoch }}.txt
+    elif [ -f /usr/bin/dpkg ]; then
+      dpkg -l | grep '^ii' > /tmp/aap-patching-backup/packages-before-{{ ansible_date_time.epoch }}.txt
+    fi
+  args:
+    creates: "/tmp/aap-patching-backup/packages-before-{{ ansible_date_time.epoch }}.txt"
+  become: true
+
 - name: Ensure yum-utils is installed for reboot check (RedHat family)
   ansible.builtin.yum:
     name: yum-utils

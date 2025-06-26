@@ -1,42 +1,40 @@
 ---
-# AAP 2.5 Compatible Collections for Cloud Operations
+# AAP 2.5 Compatible Collections for OS Patching
 # Updated for Ansible Automation Platform 2.5 requirements
 
 collections:
-  # AWS Collections
-  - name: amazon.aws
-    version: ">=6.0.0"
-    source: https://galaxy.ansible.com
-
-  # Azure Collections  
-  - name: azure.azcollection
-    version: ">=1.19.0"
-    source: https://galaxy.ansible.com
-
-  # Google Cloud Collections
-  - name: google.cloud
-    version: ">=1.2.0"
-    source: https://galaxy.ansible.com
-
   # Core Ansible Collections
   - name: ansible.posix
     version: ">=1.5.0"
     source: https://galaxy.ansible.com
-
+  
   - name: ansible.utils
     version: ">=3.0.0"
+    source: https://galaxy.ansible.com
+  
+  - name: ansible.windows
+    version: ">=2.0.0"
     source: https://galaxy.ansible.com
 
   # Community Collections
   - name: community.general
     version: ">=8.0.0"
     source: https://galaxy.ansible.com
-
-  - name: community.crypto
+  
+  - name: community.windows
     version: ">=2.0.0"
     source: https://galaxy.ansible.com
 
-  # Kubernetes Collections
-  - name: kubernetes.core
-    version: ">=2.4.0"
+  # Optional Collections for Extended Functionality
+  - name: community.vmware
+    version: ">=4.0.0"
+    source: https://galaxy.ansible.com
+  
+  - name: microsoft.ad
+    version: ">=1.0.0"
+    source: https://galaxy.ansible.com
+    
+  # Email notification support
+  - name: community.crypto
+    version: ">=2.0.0"
     source: https://galaxy.ansible.com

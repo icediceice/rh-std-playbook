@@ -1,4 +1,36 @@
 ---
+# AAP 2.5 Optimized Fortinet Connection Playbook
+# Connect to Fortinet VA and authenticate with enhanced logging and error handling
+
+- name: Pre-flight checks and variable validation
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  become: false
+  vars:
+    fortinet_hosts: "{{ fortinet_hosts | default('all') }}"
+    vdom: "{{ vdom | default('root') }}"
+    
+  tasks:
+    - name: Display job execution information
+      debug:
+        msg:
+          - "=== AAP 2.5 Fortinet Connection Job Information ==="
+          - "Job Template: {{ awx_job_template_name | default('Fortinet Connection') }}"
+          - "Job ID: {{ awx_job_id | default('N/A') }}"
+          - "Target Hosts: {{ fortinet_hosts }}"
+          - "VDOM: {{ vdom }}"
+          - "Started by: {{ awx_user_name | default(ansible_user_id) }}"
+      tags: [always]
+
+    - name: Validate required variables
+      assert:
+        that:
+          - fortinet_hosts is defined
+          - fortinet_hosts != ""
+        fail_msg: "fortinet_hosts variable must be defined and not empty"
+        success_msg: "Variable validation successful"
+
 - name: Connect to Fortinet VA and authenticate
   hosts: "{{ fortinet_hosts }}"
   gather_facts: no
@@ -10,12 +42,89 @@
     fortinet_username: "{{ fortinet_user | default(ansible_user) }}"
     fortinet_password: "{{ fortinet_pass | default(ansible_password) }}"
     vdom: "{{ vdom | default('root') }}"
+    connection_timeout: "{{ fortinet_connection_timeout | default(30) }}"
+    
   tasks:
+    - name: Test connectivity to Fortinet device
+      wait_for:
+        host: "{{ ansible_host }}"
+        port: 443
+        timeout: 10
+      delegate_to: localhost
+      vars:
+        ansible_connection: local
+
     - name: Authenticate to Fortinet VA
       fortinet.fortios.fortios_monitor_fact:
         vdom: "{{ vdom }}"
         selector: 'system_status'
+        access_token: "{{ fortinet_access_token | default(omit) }}"
       register: login_result
-    - name: Show authentication result
+      retries: 3
+      delay: 5
+      until: login_result is not failed
+
+    - name: Display authentication result
       debug:
-        var: login_result
+        msg:
+          - "Authentication Status: {{ 'SUCCESS' if login_result is succeeded else 'FAILED' }}"
+          - "Device: {{ inventory_hostname }}"
+          - "VDOM: {{ vdom }}"
+          - "Hostname: {{ login_result.meta.results.hostname | default('Unknown') }}"
+          - "Version: {{ login_result.meta.results.version | default('Unknown') }}"
+          - "Serial: {{ login_result.meta.results.serial | default('Unknown') }}"
+
+    - name: Log connection activity
+      copy:
+        content: |
+          Fortinet Connection Activity - {{ ansible_date_time.iso8601 }}
+          =======================================================
+          
+          AAP Job ID: {{ awx_job_id | default('N/A') }}
+          Target Device: {{ inventory_hostname }} ({{ ansible_host }})
+          VDOM: {{ vdom }}
+          Authentication: {{ 'SUCCESS' if login_result is succeeded else 'FAILED' }}
+          
+          Device Information:
+          - Hostname: {{ login_result.meta.results.hostname | default('Unknown') }}
+          - Version: {{ login_result.meta.results.version | default('Unknown') }}
+          - Serial: {{ login_result.meta.results.serial | default('Unknown') }}
+          
+          Started by: {{ awx_user_name | default(ansible_user_id) }}
+        dest: "/tmp/fortinet-connection-{{ inventory_hostname }}-{{ ansible_date_time.epoch }}.log"
+      delegate_to: localhost
+      vars:
+        ansible_connection: local
+
+    - name: Fail if authentication was unsuccessful
+      fail:
+        msg: "Failed to authenticate to {{ inventory_hostname }}"
+      when: login_result is failed
+
+- name: Connection summary and cleanup
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  become: false
+  
+  tasks:
+    - name: Generate connection summary
+      set_fact:
+        connection_summary:
+          job_id: "{{ awx_job_id | default('N/A') }}"
+          started_by: "{{ awx_user_name | default(ansible_user_id) }}"
+          target_hosts: "{{ groups[fortinet_hosts] if fortinet_hosts != 'all' else groups['all'] }}"
+          total_hosts: "{{ (groups[fortinet_hosts] if fortinet_hosts != 'all' else groups['all']) | length }}"
+          completion_time: "{{ ansible_date_time.iso8601 }}"
+          vdom: "{{ vdom }}"
+
+    - name: Display connection summary
+      debug:
+        msg:
+          - "=== AAP 2.5 Fortinet Connection Summary ==="
+          - "Job ID: {{ connection_summary.job_id }}"
+          - "Started by: {{ connection_summary.started_by }}"
+          - "Total Devices: {{ connection_summary.total_hosts }}"
+          - "VDOM: {{ connection_summary.vdom }}"
+          - "Completion Time: {{ connection_summary.completion_time }}"
+      tags: [always]

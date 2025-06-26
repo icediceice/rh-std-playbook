@@ -1,0 +1,32 @@
+---
+# Role Metadata for AAP 2.5 Windows Patching Role
+galaxy_info:
+  role_name: windows_patching
+  author: AAP Administrator
+  description: "AAP 2.5 optimized Windows patching role for Windows Server and Desktop systems"
+  company: "Internal"
+  license: MIT
+  min_ansible_version: "2.12"
+  
+  platforms:
+    - name: Windows
+      versions:
+        - "2019"
+        - "2022"
+        - "10"
+        - "11"
+
+  galaxy_tags:
+    - patching
+    - security
+    - updates
+    - windows
+    - aap
+    - automation
+
+dependencies: []
+
+collections:
+  - ansible.windows
+  - community.windows
+  - community.general

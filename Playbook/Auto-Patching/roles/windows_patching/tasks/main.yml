@@ -1,16 +1,138 @@
 ---
-- name: Install Windows Updates
-  ansible.windows.win_updates:
+# AAP 2.5 Optimized Windows Patching Role
+# Tasks for patching Windows systems
+
+- name: Detect Windows version
+  debug:
+    msg: "Detected Windows version: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+
+- name: Validate Windows system
+  assert:
+    that:
+      - ansible_os_family == "Windows"
+    fail_msg: "This role only supports Windows systems"
+    success_msg: "Windows system detected: {{ ansible_distribution }}"
+
+- name: Create Windows patching directories
+  win_file:
+    path: "{{ item }}"
+    state: directory
+  loop:
+    - "C:\\AAP-Patching\\Logs"
+    - "C:\\AAP-Patching\\Backup"
+
+- name: Check current Windows Update service status
+  win_service_info:
+    name: wuauserv
+  register: windows_update_service
+
+- name: Ensure Windows Update service is running
+  win_service:
+    name: wuauserv
+    state: started
+    start_mode: auto
+  when: windows_update_service.services[0].state != "running"
+
+- name: Get list of available updates
+  win_updates:
     category_names: "{{ win_update_categories }}"
-    reboot: false # We will control reboot in the main playbook
-    log_path: C:\ansible_win_updates.log
-  register: update_result
+    state: searched
+  register: available_updates
 
-- name: Debug update results
-  ansible.builtin.debug:
-    var: update_result
+- name: Display available updates count
+  debug:
+    msg: |
+      Available updates for {{ inventory_hostname }}:
+      Total: {{ available_updates.found_update_count | default(0) }} updates
+      Categories: {{ win_update_categories | join(', ') }}
 
-- name: Set reboot required fact
-  ansible.builtin.set_fact:
-    patching_reboot_required: true
-  when: update_result.reboot_required
+- name: Create pre-patch system restore point
+  win_shell: |
+    $RestorePoint = "AAP-Patching-" + (Get-Date -Format "yyyyMMdd-HHmmss")
+    Checkpoint-Computer -Description $RestorePoint -RestorePointType "MODIFY_SETTINGS"
+    Write-Output "Created restore point: $RestorePoint"
+  register: restore_point_result
+  when: 
+    - pre_patch_snapshot | default(false)
+    - available_updates.found_update_count > 0
+  ignore_errors: true
+
+- name: Log restore point creation
+  win_copy:
+    content: |
+      Pre-patch restore point created: {{ ansible_date_time.iso8601 }}
+      {{ restore_point_result.stdout | default('No restore point created') }}
+    dest: "C:\\AAP-Patching\\Logs\\restore-point-{{ ansible_date_time.epoch }}.log"
+  when: restore_point_result is defined
+
+- name: Install Windows updates
+  win_updates:
+    category_names: "{{ win_update_categories }}"
+    reboot: false
+    reboot_timeout: "{{ win_reboot_timeout | default(1200) }}"
+    log_path: "C:\\AAP-Patching\\Logs\\windows-updates-{{ ansible_date_time.epoch }}.log"
+  register: windows_update_result
+  when: available_updates.found_update_count > 0
+  notify:
+    - set windows reboot required
+    - log windows patching activity
+
+- name: Display update installation results
+  debug:
+    msg: |
+      Windows Update Results for {{ inventory_hostname }}:
+      Installed: {{ windows_update_result.installed_update_count | default(0) }} updates
+      Failed: {{ windows_update_result.failed_update_count | default(0) }} updates
+      Reboot Required: {{ windows_update_result.reboot_required | default(false) }}
+
+- name: Check for pending reboot
+  win_shell: |
+    $PendingReboot = $false
+    
+    # Check Windows Update reboot flags
+    $WUReboot = Get-ChildItem "HKLM:SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Auto Update\\RebootRequired" -ErrorAction SilentlyContinue
+    if ($WUReboot) { $PendingReboot = $true }
+    
+    # Check Component Based Servicing reboot flags
+    $CBSReboot = Get-ChildItem "HKLM:SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Component Based Servicing\\RebootPending" -ErrorAction SilentlyContinue
+    if ($CBSReboot) { $PendingReboot = $true }
+    
+    # Check PendingFileRenames
+    $PFRNames = Get-ItemProperty "HKLM:SYSTEM\\CurrentControlSet\\Control\\Session Manager" -Name PendingFileRenameOperations -ErrorAction SilentlyContinue
+    if ($PFRNames) { $PendingReboot = $true }
+    
+    if ($PendingReboot) {
+        Write-Output "reboot_required"
+    } else {
+        Write-Output "no_reboot_required"
+    }
+  register: pending_reboot_check
+  changed_when: false
+
+- name: Set Windows reboot required fact
+  set_fact:
+    patching_reboot_required: "{{ 
+      pending_reboot_check.stdout.strip() == 'reboot_required' or 
+      (windows_update_result.reboot_required | default(false))
+    }}"
+
+- name: Generate Windows patching report
+  win_copy:
+    content: |
+      Windows Patching Report - {{ ansible_date_time.iso8601 }}
+      ================================================
+      
+      Target System: {{ inventory_hostname }}
+      Windows Version: {{ ansible_distribution }} {{ ansible_distribution_version }}
+      
+      Update Categories: {{ win_update_categories | join(', ') }}
+      Available Updates: {{ available_updates.found_update_count | default(0) }}
+      Installed Updates: {{ windows_update_result.installed_update_count | default(0) }}
+      Failed Updates: {{ windows_update_result.failed_update_count | default(0) }}
+      
+      Reboot Required: {{ patching_reboot_required }}
+      Restore Point: {{ 'Created' if restore_point_result is defined and restore_point_result.stdout else 'Not Created' }}
+      
+      AAP Job ID: {{ awx_job_id | default('N/A') }}
+      Started by: {{ awx_user_name | default(ansible_user_id) }}
+    dest: "C:\\AAP-Patching\\Logs\\{{ inventory_hostname }}-patching-report-{{ ansible_date_time.epoch }}.log"

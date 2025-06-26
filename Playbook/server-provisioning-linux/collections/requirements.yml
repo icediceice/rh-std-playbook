@@ -1,12 +1,41 @@
 ---
+# AAP 2.5 Compatible Collections for RHEL Server Provisioning
+# Updated for Ansible Automation Platform 2.5 requirements
+
 collections:
+  # Core Ansible Collections
   - name: ansible.posix
     version: ">=1.5.0"
-  - name: community.general
-    version: ">=6.0.0"
-  - name: community.mysql
-    version: ">=3.0.0"
-  - name: community.postgresql
-    version: ">=2.0.0"
+    source: https://galaxy.ansible.com
+  
   - name: ansible.utils
+    version: ">=3.0.0"
+    source: https://galaxy.ansible.com
+
+  # Community Collections for Database and General Operations
+  - name: community.general
+    version: ">=8.0.0"
+    source: https://galaxy.ansible.com
+  
+  - name: community.mysql
+    version: ">=3.7.0"
+    source: https://galaxy.ansible.com
+  
+  - name: community.postgresql
+    version: ">=3.2.0"
+    source: https://galaxy.ansible.com
+
+  # Container and Platform Collections  
+  - name: containers.podman
+    version: ">=1.10.0"
+    source: https://galaxy.ansible.com
+
+  # Security and Monitoring
+  - name: community.crypto
     version: ">=2.0.0"
+    source: https://galaxy.ansible.com
+
+  # RHEL specific collections
+  - name: redhat.insights
+    version: ">=1.0.0"
+    source: https://galaxy.ansible.com

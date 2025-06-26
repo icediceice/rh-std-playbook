@@ -1,0 +1,38 @@
+---
+# Role Metadata for AAP 2.5 Linux Patching Role
+galaxy_info:
+  role_name: linux_patching
+  author: AAP Administrator
+  description: "AAP 2.5 optimized Linux patching role for RHEL and Debian systems"
+  company: "Internal"
+  license: MIT
+  min_ansible_version: "2.12"
+  
+  platforms:
+    - name: EL
+      versions:
+        - "8"
+        - "9"
+    - name: Ubuntu
+      versions:
+        - "20.04"
+        - "22.04"
+    - name: Debian
+      versions:
+        - "11"
+        - "12"
+
+  galaxy_tags:
+    - patching
+    - security
+    - updates
+    - linux
+    - aap
+    - automation
+
+dependencies: []
+
+collections:
+  - ansible.posix
+  - community.general
+  - ansible.utils

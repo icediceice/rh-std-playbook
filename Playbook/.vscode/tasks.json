@@ -1,0 +1,19 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "AAP OS Patching - Syntax Check",
+			"type": "shell",
+			"command": "ansible-playbook",
+			"args": [
+				"--syntax-check",
+				"patching_playbook.yml"
+			],
+			"group": "build",
+			"isBackground": false,
+			"problemMatcher": [
+				"$ansible"
+			]
+		}
+	]
+}

@@ -1,0 +1,31 @@
+---
+# Windows Patching Role Handlers
+# AAP 2.5 compatible handlers for Windows patching operations
+
+- name: set windows reboot required
+  set_fact:
+    patching_reboot_required: true
+
+- name: log windows patching activity
+  win_lineinfile:
+    path: "C:\\AAP-Patching\\Logs\\patching-activity.log"
+    line: "{{ ansible_date_time.iso8601 }} - {{ inventory_hostname }} - Windows patching activity completed"
+    create: yes
+
+- name: send windows patch notification
+  mail:
+    to: "{{ notification_email }}"
+    subject: "Windows patching completed on {{ inventory_hostname }}"
+    body: |
+      Windows patching has completed on {{ inventory_hostname }}.
+      
+      Timestamp: {{ ansible_date_time.iso8601 }}
+      Windows Version: {{ ansible_distribution }} {{ ansible_distribution_version }}
+      Reboot Required: {{ patching_reboot_required | default(false) }}
+      
+      Check C:\AAP-Patching\Logs\ for detailed logs.
+  when: 
+    - notification_email is defined
+    - notification_email != ""
+  delegate_to: localhost
+  ignore_errors: true

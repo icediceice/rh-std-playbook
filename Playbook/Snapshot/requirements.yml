@@ -1,21 +1,20 @@
 ---
-# AAP 2.5 Compatible Collections for Cloud Operations
+# AAP 2.5 Compatible Collections for VM Snapshot Operations
 # Updated for Ansible Automation Platform 2.5 requirements
 
 collections:
-  # AWS Collections
-  - name: amazon.aws
-    version: ">=6.0.0"
+  # VMware Collections
+  - name: community.vmware
+    version: ">=4.0.0"
     source: https://galaxy.ansible.com
 
-  # Azure Collections  
-  - name: azure.azcollection
-    version: ">=1.19.0"
+  # Kubernetes/OpenShift Collections
+  - name: kubernetes.core
+    version: ">=2.4.0"
     source: https://galaxy.ansible.com
 
-  # Google Cloud Collections
-  - name: google.cloud
-    version: ">=1.2.0"
+  - name: redhat.openshift
+    version: ">=2.0.0"
     source: https://galaxy.ansible.com
 
   # Core Ansible Collections
@@ -34,9 +33,4 @@ collections:
 
   - name: community.crypto
     version: ">=2.0.0"
-    source: https://galaxy.ansible.com
-
-  # Kubernetes Collections
-  - name: kubernetes.core
-    version: ">=2.4.0"
     source: https://galaxy.ansible.com

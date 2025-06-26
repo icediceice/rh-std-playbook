@@ -1,0 +1,26 @@
+---
+# Linux Patching Role Default Variables
+# AAP 2.5 compatible defaults for Linux patching
+
+# Package exclusions (comma-separated string)
+linux_exclude_packages: ""
+
+# Patching behavior
+patch_security_only: false
+patch_with_reboot_check: true
+backup_package_list: true
+
+# Logging settings  
+patching_log_dir: "/var/log/aap-patching"
+patching_backup_dir: "/tmp/aap-patching-backup"
+
+# Performance settings
+yum_update_timeout: 1800  # 30 minutes
+apt_update_timeout: 1800  # 30 minutes
+
+# Email notification
+notification_email: ""
+
+# Reboot settings
+patching_reboot_required: false
+max_reboot_wait: 600

@@ -1,10 +1,10 @@
 {
-  "name": "OS Patching Survey",
-  "description": "Survey for the OS Patching Job Template",
+  "name": "AAP 2.5 OS Patching Survey",
+  "description": "Comprehensive survey for OS patching with AAP 2.5 web console integration",
   "spec": [
     {
-      "question_name": "Which hosts would you like to patch?",
-      "question_description": "Select the inventory group to target for patching.",
+      "question_name": "Target Host Group",
+      "question_description": "Select the inventory group to target for patching operations.",
       "variable": "patch_target",
       "type": "multiplechoice",
       "choices": "all\nlinux\nwindows",
@@ -12,8 +12,8 @@
       "default": "all"
     },
     {
-      "question_name": "Allow hosts to be rebooted if required?",
-      "question_description": "Select 'yes' to permit an automatic reboot if updates require it.",
+      "question_name": "Allow Automatic Reboot",
+      "question_description": "Allow systems to reboot automatically if updates require it.",
       "variable": "allow_reboot",
       "type": "multiplechoice",
       "choices": "yes\nno",
@@ -21,21 +21,62 @@
       "default": "no"
     },
     {
-      "question_name": "(Windows) Select update categories to install",
-      "question_description": "Choose one or more Windows Update categories to apply.",
+      "question_name": "Maintenance Window (Hours)",
+      "question_description": "Maximum time allowed for patching operations (1-8 hours).",
+      "variable": "maintenance_window_hours",
+      "type": "integer",
+      "required": true,
+      "default": 2,
+      "min": 1,
+      "max": 8
+    },
+    {
+      "question_name": "Pre-Patch Snapshot",
+      "question_description": "Create system snapshots before applying patches (where supported).",
+      "variable": "pre_patch_snapshot",
+      "type": "multiplechoice",
+      "choices": "yes\nno",
+      "required": false,
+      "default": "no"
+    },
+    {
+      "question_name": "Windows Update Categories",
+      "question_description": "Select Windows Update categories to install (Windows hosts only).",
       "variable": "win_update_categories",
       "type": "multiselect",
-      "choices": "Application\nCriticalUpdates\nDefinitionUpdates\nDeveloperKits\nFeaturePacks\nSecurityUpdates\nServicePacks\nTools\nUpdateRollups\nUpdates",
+      "choices": "SecurityUpdates\nCriticalUpdates\nDefinitionUpdates\nUpdates\nUpdateRollups\nServicePacks",
       "required": false,
       "default": "SecurityUpdates\nCriticalUpdates"
     },
     {
-      "question_name": "(Linux) List any packages to exclude",
-      "question_description": "Enter a comma-separated list of packages to exclude from updates (e.g., kernel*,httpd).",
+      "question_name": "Linux Package Exclusions",
+      "question_description": "Comma-separated list of packages to exclude from updates (Linux only).",
       "variable": "linux_exclude_packages",
       "type": "text",
       "required": false,
-      "default": ""
+      "default": "",
+      "min": 0,
+      "max": 255
+    },
+    {
+      "question_name": "Patching Batch Size",
+      "question_description": "Percentage or number of hosts to patch simultaneously.",
+      "variable": "patching_batch_size",
+      "type": "text",
+      "required": false,
+      "default": "25%",
+      "min": 1,
+      "max": 10
+    },
+    {
+      "question_name": "Email Notification",
+      "question_description": "Email address for job completion notifications (optional).",
+      "variable": "notification_email",
+      "type": "text",
+      "required": false,
+      "default": "",
+      "min": 0,
+      "max": 100
     }
   ]
 }

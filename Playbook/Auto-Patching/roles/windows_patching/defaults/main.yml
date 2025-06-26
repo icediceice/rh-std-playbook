@@ -1,0 +1,26 @@
+---
+# Windows Patching Role Default Variables
+# AAP 2.5 compatible defaults for Windows patching
+
+# Windows Update categories to install
+win_update_categories:
+  - SecurityUpdates
+  - CriticalUpdates
+
+# Windows-specific settings
+win_reboot_timeout: 1200  # 20 minutes
+win_update_timeout: 3600  # 60 minutes
+
+# System restore point settings
+pre_patch_snapshot: false
+
+# Logging settings  
+win_patching_log_dir: "C:\\AAP-Patching\\Logs"
+win_patching_backup_dir: "C:\\AAP-Patching\\Backup"
+
+# Email notification
+notification_email: ""
+
+# Reboot settings
+patching_reboot_required: false
+max_reboot_wait: 600
