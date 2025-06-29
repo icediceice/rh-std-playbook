@@ -4,70 +4,25 @@
 # Survey file: patching_survey.json
 
 - name: OS Patching Pre-flight Checks and Validation
-  hosts: localhost
-  gather_facts: false
-  connection: local
-  become: false
+  hosts: "{{ patch_target | default('all') }}"
+  gather_facts: true
+  gather_subset:
+    - '!all'
+    - 'min'
+  serial: "{{ patching_batch_size | default('25%') }}"
   vars:
     # AAP 2.5 Survey Variables with Defaults and Validation
     patch_target: "{{ patch_target | default('all') }}"
     allow_reboot: "{{ allow_reboot | default('no') | bool }}"
-    win_update_categories: "{{ win_update_categories | default(['SecurityUpdates', 'CriticalUpdates']) }}"
+    win_update_categories: "{{ win_update_categories_raw | default('SecurityUpdates\nCriticalUpdates') | splitlines }}"
     linux_exclude_packages: "{{ linux_exclude_packages | default('') }}"
     maintenance_window_hours: "{{ maintenance_window_hours | default(2) | int }}"
     pre_patch_snapshot: "{{ pre_patch_snapshot | default('no') | bool }}"
     notification_email: "{{ notification_email | default('') }}"
     
   tasks:
-    - name: Display job execution information
-      debug:
-        msg:
-          - "=== AAP 2.5 OS Patching Job Information ==="
-          - "Job Template: {{ awx_job_template_name | default('OS Patching') }}"
-          - "Job ID: {{ awx_job_id | default('N/A') }}"
-          - "Target Hosts: {{ patch_target }}"
-          - "Allow Reboot: {{ allow_reboot }}"
-          - "Maintenance Window: {{ maintenance_window_hours }} hours"
-          - "Pre-patch Snapshot: {{ pre_patch_snapshot }}"
-          - "Started by: {{ awx_user_name | default(ansible_user_id) }}"
-      tags: [always]
-
-    - name: Validate patch target parameter
-      assert:
-        that:
-          - patch_target in ['all', 'linux', 'windows']
-        fail_msg: "patch_target must be 'all', 'linux', or 'windows'"
-        success_msg: "Target validation successful: {{ patch_target }}"
-
-    - name: Validate maintenance window
-      assert:
-        that:
-          - maintenance_window_hours >= 1
-          - maintenance_window_hours <= 8
-        fail_msg: "Maintenance window must be between 1-8 hours"
-
-    - name: Set dynamic inventory groups
-      add_host:
-        name: "{{ item }}"
-        groups: patching_targets
-      loop: "{{ groups[patch_target] if patch_target != 'all' else groups['all'] }}"
-      when: item not in ['localhost']
-
-- name: OS Patching Pre-flight and System Validation
-  hosts: "{{ patch_target }}"
-  gather_facts: true
-  serial: "{{ patching_batch_size | default('25%') }}"
-  vars:
-    # Inherit variables from previous play
-    allow_reboot: "{{ hostvars['localhost']['allow_reboot'] }}"
-    win_update_categories: "{{ hostvars['localhost']['win_update_categories'] }}"
-    linux_exclude_packages: "{{ hostvars['localhost']['linux_exclude_packages'] }}"
-    maintenance_window_hours: "{{ hostvars['localhost']['maintenance_window_hours'] }}"
-    pre_patch_snapshot: "{{ hostvars['localhost']['pre_patch_snapshot'] }}"
-
-  tasks:
     - name: Create patching log directory
-      file:
+      ansible.builtin.file:
         path: /var/log/aap-patching
         state: directory
         mode: '0755'
@@ -75,48 +30,64 @@
       when: ansible_os_family != "Windows"
 
     - name: Create Windows patching log directory
-      win_file:
+      ansible.windows.win_file:
         path: C:\AAP-Patching\Logs
         state: directory
       when: ansible_os_family == "Windows"
 
-    - name: Log patching start
-      copy:
-        content: |
+    - name: Set log file path variable
+      ansible.builtin.set_fact:
+        patching_log_file: "{{ '/var/log/aap-patching/patch-' + ansible_date_time.epoch + '.log' if ansible_os_family != 'Windows' else 'C:/AAP-Patching/Logs/patch-' + ansible_date_time.epoch + '.log' }}"
+
+    - name: Set completion log file path variable
+      ansible.builtin.set_fact:
+        patching_complete_log_file: "{{ '/var/log/aap-patching/patch-complete-' + ansible_date_time.epoch + '.log' if ansible_os_family != 'Windows' else 'C:/AAP-Patching/Logs/patch-complete-' + ansible_date_time.epoch + '.log' }}"
+
+    - name: Log patching start (append-only)
+      ansible.builtin.blockinfile:
+        path: "{{ patching_log_file }}"
+        create: true
+        marker: "# --- ANSIBLE PATCHING LOG - {mark} ---"
+        block: |
           Patching Job Started: {{ ansible_date_time.iso8601 }}
           AAP Job ID: {{ awx_job_id | default('N/A') }}
           Target: {{ inventory_hostname }}
           OS Family: {{ ansible_os_family }}
           Allow Reboot: {{ allow_reboot }}
           Maintenance Window: {{ maintenance_window_hours }} hours
-        dest: "{{ '/var/log/aap-patching/patch-' + ansible_date_time.epoch + '.log' if ansible_os_family != 'Windows' else 'C:/AAP-Patching/Logs/patch-' + ansible_date_time.epoch + '.log' }}"
       become: "{{ ansible_os_family != 'Windows' }}"
 
-    - name: Check system resources before patching
-      setup:
-        filter: 
-          - ansible_memory_mb
-          - ansible_mounts
-          - ansible_processor_count
-      register: system_resources
-
     - name: Validate sufficient disk space
-      assert:
+      ansible.builtin.assert:
         that:
           - item.size_available > 1073741824  # 1GB in bytes
         fail_msg: "Insufficient disk space on {{ item.mount }}: {{ (item.size_available/1024/1024/1024) | round(2) }}GB available"
-      loop: "{{ ansible_mounts }}"
+      loop: "{{ ansible_facts.mounts }}"
+      loop_control:
+        label: "{{ item.mount }}"
       when: 
         - ansible_os_family != "Windows"
         - item.mount in ['/', '/var', '/tmp']
 
+    - name: Validate sufficient disk space (Windows)
+      ansible.windows.win_shell: |
+        $drive = Get-PSDrive C
+        if ($drive.Free -lt 1GB) {
+          Write-Error "Insufficient disk space on C: drive: $($drive.Free / 1GB)GB available"
+          exit 1
+        }
+        Write-Host "Disk space on C: is sufficient."
+      register: win_disk_space
+      changed_when: false
+      when: ansible_os_family == "Windows"
+
     - name: Include Linux patching role
-      include_role:
+      ansible.builtin.include_role:
         name: linux_patching
       when: ansible_os_family in ["RedHat", "Debian"]
 
     - name: Include Windows patching role
-      include_role:
+      ansible.builtin.include_role:
         name: windows_patching
       when: ansible_os_family == "Windows"
 
@@ -125,18 +96,18 @@
   gather_facts: false
   serial: "{{ patching_batch_size | default('25%') }}"
   vars:
-    allow_reboot: "{{ hostvars['localhost']['allow_reboot'] }}"
+    allow_reboot: "{{ allow_reboot | default('no') | bool }}"
     max_reboot_wait: "{{ max_reboot_wait | default(600) }}"
 
   tasks:
     - name: Check if reboot is required (Linux)
-      stat:
+      ansible.builtin.stat:
         path: /var/run/reboot-required
       register: reboot_required_file
       when: ansible_os_family != "Windows"
 
     - name: Check if reboot is required (Windows)
-      win_shell: |
+      ansible.windows.win_shell: |
         if (Get-ChildItem "HKLM:SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired" -ErrorAction SilentlyContinue) { 
           exit 1 
         } else { 
@@ -147,22 +118,22 @@
       when: ansible_os_family == "Windows"
 
     - name: Set reboot required fact
-      set_fact:
+      ansible.builtin.set_fact:
         patching_reboot_required: "{{ 
-          (ansible_os_family != 'Windows' and reboot_required_file.stat.exists) or 
-          (ansible_os_family == 'Windows' and windows_reboot_required.rc == 1) or
-          (patching_reboot_required | default(false))
+          (reboot_required_file.stat.exists | default(false)) or 
+          (windows_reboot_required.rc == 1) or
+          (patching_reboot_required | default(false))  # Preserve fact from included role
         }}"
 
     - name: Notify about pending reboot
-      debug:
+      ansible.builtin.debug:
         msg: "Reboot required for {{ inventory_hostname }} but automatic reboot is disabled"
       when: patching_reboot_required and not allow_reboot
 
     - name: Reboot system if required and allowed
-      block:
+      ansible.builtin.block:
         - name: Reboot Linux systems
-          reboot:
+          ansible.builtin.reboot:
             reboot_timeout: "{{ max_reboot_wait }}"
             connect_timeout: 5
             test_command: uptime
@@ -170,7 +141,7 @@
           when: ansible_os_family != "Windows"
 
         - name: Reboot Windows systems
-          win_reboot:
+          ansible.windows.win_reboot:
             reboot_timeout: "{{ max_reboot_wait }}"
             connect_timeout: 5
           when: ansible_os_family == "Windows"
@@ -185,15 +156,18 @@
       when: patching_reboot_required and allow_reboot
 
     - name: Gather facts after potential reboot
-      setup:
+      ansible.builtin.setup:
         filter:
           - ansible_kernel
           - ansible_uptime_seconds
       when: patching_reboot_required and allow_reboot
 
-    - name: Log patching completion
-      copy:
-        content: |
+    - name: Log patching completion (append-only)
+      ansible.builtin.blockinfile:
+        path: "{{ patching_complete_log_file }}"
+        create: true
+        marker: "# --- ANSIBLE COMPLETION LOG - {mark} ---"
+        block: |
           Patching Job Completed: {{ ansible_date_time.iso8601 }}
           AAP Job ID: {{ awx_job_id | default('N/A') }}
           Target: {{ inventory_hostname }}
@@ -201,7 +175,6 @@
           Reboot Performed: {{ allow_reboot and patching_reboot_required }}
           Current Kernel: {{ ansible_kernel | default('N/A') }}
           System Uptime: {{ ansible_uptime_seconds | default(0) }} seconds
-        dest: "{{ '/var/log/aap-patching/patch-complete-' + ansible_date_time.epoch + '.log' if ansible_os_family != 'Windows' else 'C:/AAP-Patching/Logs/patch-complete-' + ansible_date_time.epoch + '.log' }}"
       become: "{{ ansible_os_family != 'Windows' }}"
 
 - name: Patching Summary and Notification
@@ -210,9 +183,31 @@
   connection: local
   become: false
   vars:
+    patch_target: "{{ patch_target | default('all') }}"
+    allow_reboot: "{{ allow_reboot | default('no') | bool }}"
     notification_email: "{{ notification_email | default('') }}"
 
   tasks:
+    - name: Display job execution information
+      ansible.builtin.debug:
+        msg:
+          - "=== AAP 2.5 OS Patching Job Information ==="
+          - "Job Template: {{ awx_job_template_name | default('OS Patching') }}"
+          - "Job ID: {{ awx_job_id | default('N/A') }}"
+          - "Target Hosts: {{ patch_target }}"
+          - "Allow Reboot: {{ allow_reboot }}"
+          - "Started by: {{ awx_user_name | default(ansible_user_id) }}"
+      tags: [always]
+
+    - name: Validate maintenance window
+      ansible.builtin.assert:
+        that:
+          - maintenance_window_hours | default(2) | int >= 1
+          - maintenance_window_hours | default(2) | int <= 8
+        fail_msg: "Maintenance window must be between 1-8 hours"
+      vars:
+        maintenance_window_hours: "{{ maintenance_window_hours }}"
+
     - name: Generate patching summary
       set_fact:
         patching_summary:
@@ -224,7 +219,7 @@
           reboot_allowed: "{{ allow_reboot }}"
 
     - name: Display patching summary
-      debug:
+      ansible.builtin.debug:
         msg:
           - "=== AAP 2.5 Patching Job Summary ==="
           - "Job ID: {{ patching_summary.job_id }}"
@@ -235,7 +230,11 @@
       tags: [always]
 
     - name: Send email notification
-      mail:
+      community.general.mail:
+        host: "{{ mail_smtp_host | default('localhost') }}"
+        port: "{{ mail_smtp_port | default(25) }}"
+        username: "{{ mail_smtp_user | default(omit) }}"
+        password: "{{ mail_smtp_password | default(omit) }}"
         to: "{{ notification_email }}"
         subject: "AAP Patching Job {{ patching_summary.job_id }} - Completed"
         body: |
@@ -250,7 +249,10 @@
           
           Please check the AAP web console for detailed logs and results.
       when: 
-        - notification_email != ''
-        - notification_email is defined
+        - notification_email | default('') != ''
       delegate_to: localhost
+      # Retry up to 3 times with a 15-second delay between attempts
+      retries: 3
+      delay: 15
+      # Continue if the email fails after all retries
       ignore_errors: true

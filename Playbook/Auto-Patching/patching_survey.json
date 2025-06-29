@@ -42,7 +42,7 @@
     {
       "question_name": "Windows Update Categories",
       "question_description": "Select Windows Update categories to install (Windows hosts only).",
-      "variable": "win_update_categories",
+      "variable": "win_update_categories_raw",
       "type": "multiselect",
       "choices": "SecurityUpdates\nCriticalUpdates\nDefinitionUpdates\nUpdates\nUpdateRollups\nServicePacks",
       "required": false,

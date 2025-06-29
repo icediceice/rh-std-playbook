@@ -157,9 +157,9 @@ ansible-playbook -i inventory patching_playbook.yml -e "notification_email=admin
 - **Error Tracking**: Detailed error logging with context
 
 ### Log Locations:
-- **Linux**: `/var/log/aap-patching/`
-- **Windows**: `C:\AAP-Patching\Logs\`
-- **Controller**: `/var/log/ansible-patching.log`
+Logs are created on each managed node that is part of the patching job.
+- **Linux Nodes**: `/var/log/aap-patching/`
+- **Windows Nodes**: `C:\AAP-Patching\Logs\`
 
 ## Troubleshooting
 
@@ -176,6 +176,37 @@ ansible-playbook -i inventory patching_playbook.yml -e "notification_email=admin
 3. **Reboot Issues**
    - Ensure `allow_reboot` is set to `yes` when needed
    - Verify maintenance window is sufficient
+
+## Failure and Retry Strategy
+
+The playbook and platform offer two ways to handle failures.
+
+### 1. Automatic Task Retries (In-Playbook)
+
+Certain tasks, like sending email notifications, are configured to automatically retry on failure. This helps the playbook recover from temporary issues, such as a network glitch, without failing the entire job. For more critical tasks like package installation, you can add retry logic directly within the `linux_patching` and `windows_patching` roles.
+
+**Example for a `yum` task inside a role:**
+```yaml
+- name: Update all packages
+  ansible.builtin.yum:
+    name: '*'
+    state: latest
+  retries: 3   # Number of retries
+  delay: 30    # Seconds to wait between retries
+  register: yum_result
+  until: yum_result is not failed # The condition to check for success
+```
+
+### 2. Manual Job Relaunch (AAP Platform)
+
+If a job fails because of a non-temporary issue on one or more hosts (e.g., a host is out of disk space), you can use AAP's relaunch feature after fixing the problem.
+
+1.  Navigate to **Views → Jobs** in the AAP console.
+2.  Find and click on your failed patching job.
+3.  In the top right, click the **Relaunch** button.
+4.  A dropdown will appear. Select **Relaunch on Failed Hosts**.
+
+This will start a new job that targets *only* the hosts that failed in the previous run, saving time and avoiding unnecessary changes on already successful hosts.
 
 ## Security Best Practices
 

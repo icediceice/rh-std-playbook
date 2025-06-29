@@ -63,6 +63,16 @@
         msg: "Invalid OS type '{{ host_os_type }}'. Please enter 'linux' or 'windows'."
       when: host_os_type not in ['linux', 'windows']
 
+    - name: Check if host already exists
+      ansible.builtin.command: "grep -q '^{{ new_hostname }} ' {{ inventory_file }}"
+      register: host_exists
+      failed_when: false
+      changed_when: false
+
+    - name: Fail if host already exists
+      ansible.builtin.fail: msg="Host '{{ new_hostname }}' already exists in the inventory."
+      when: host_exists.rc == 0
+
     - name: Add new host to the inventory file
       ansible.builtin.lineinfile:
         path: "{{ inventory_file }}"
