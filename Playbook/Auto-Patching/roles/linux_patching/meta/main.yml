@@ -6,7 +6,7 @@ galaxy_info:
   description: "AAP 2.5 optimized Linux patching role for RHEL and Debian systems"
   company: "Internal"
   license: MIT
-  min_ansible_version: "2.12"
+  min_ansible_version: "2.15"
   
   platforms:
     - name: EL
@@ -28,7 +28,7 @@ galaxy_info:
     - updates
     - linux
     - aap
-    - automation
+    - execution-environment
 
 dependencies: []
 

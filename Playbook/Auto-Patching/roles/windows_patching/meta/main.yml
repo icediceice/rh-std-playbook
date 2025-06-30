@@ -6,7 +6,7 @@ galaxy_info:
   description: "AAP 2.5 optimized Windows patching role for Windows Server and Desktop systems"
   company: "Internal"
   license: MIT
-  min_ansible_version: "2.12"
+  min_ansible_version: "2.15"
   
   platforms:
     - name: Windows
@@ -22,7 +22,7 @@ galaxy_info:
     - updates
     - windows
     - aap
-    - automation
+    - execution-environment
 
 dependencies: []
 

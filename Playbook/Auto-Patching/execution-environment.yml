@@ -7,7 +7,7 @@ version: 3
 # Base image with Python and Ansible runtime
 images:
   base_image:
-    name: 'quay.io/ansible/ansible-runner:latest'
+    name: 'quay.io/ansible/ansible-runner:2.13'
 
 # Dependencies for execution environment
 dependencies:
@@ -19,6 +19,8 @@ dependencies:
     requests>=2.25.0
     pywinrm>=0.4.3
     jinja2>=3.0.0
+    packaging>=21.0
+    setuptools>=50.0
 
   # System packages for Linux/Windows management
   system: |

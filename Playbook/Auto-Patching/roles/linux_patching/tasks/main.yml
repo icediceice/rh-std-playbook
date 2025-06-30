@@ -15,6 +15,8 @@
     update_cache: true
   when: ansible_os_family == "RedHat"
   become: true
+  retries: 3
+  delay: 10
 
 - name: Update package cache (Debian family)
   ansible.builtin.apt:
@@ -22,6 +24,8 @@
     cache_valid_time: 3600
   when: ansible_os_family == "Debian"
   become: true
+  retries: 3
+  delay: 10
 
 - name: Install security updates (RedHat family)
   ansible.builtin.dnf:
@@ -32,6 +36,8 @@
   when: ansible_os_family == "RedHat"
   become: true
   register: redhat_patching_result
+  retries: 2
+  delay: 30
 
 - name: Install updates (Debian family)
   ansible.builtin.apt:
@@ -42,6 +48,8 @@
   when: ansible_os_family == "Debian"
   become: true
   register: debian_patching_result
+  retries: 2
+  delay: 30
 
 - name: Check if reboot is required (RedHat family)
   ansible.builtin.command: needs-restarting -r

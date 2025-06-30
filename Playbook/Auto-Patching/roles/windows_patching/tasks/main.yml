@@ -41,6 +41,8 @@
     log_path: "C:\\Windows\\Temp\\ansible_win_updates.log"
   register: windows_update_result
   when: available_updates.found_update_count > 0
+  retries: 2
+  delay: 60
 
 - name: Check for pending Windows reboot
   ansible.windows.win_shell: |

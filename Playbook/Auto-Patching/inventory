@@ -1,16 +1,53 @@
+# AAP 2.5 Inventory File for OS Patching
+# This is a sample inventory - in AAP 2.5, use the web console to create inventories
+# and assign hosts to appropriate groups for patching operations
+
 [linux]
+# Linux hosts for patching (example entries)
 linux-node1.example.com ansible_host=192.168.1.10
+# linux-node2.example.com ansible_host=192.168.1.11
 
 [windows]
+# Windows hosts for patching (example entries)
 windows-node1.example.com ansible_host=192.168.1.20
+# windows-node2.example.com ansible_host=192.168.1.21
+
+[rhel:children]
+# RHEL-specific hosts (subset of linux)
+# rhel8
+# rhel9
+
+[ubuntu:children]
+# Ubuntu-specific hosts (subset of linux)
+# ubuntu20
+# ubuntu22
+
+[windows_servers:children]
+# Windows Server hosts (subset of windows)
+windows
+
+[production]
+# Production environment hosts
+# Add production hosts here
+
+[development]
+# Development environment hosts
+# Add development hosts here
+
+[staging]
+# Staging environment hosts  
+# Add staging hosts here
 
 [all:vars]
 # Common variables for all hosts
-# It's recommended to store credentials in AAP's credential store
+# NOTE: In AAP 2.5, use Credentials instead of storing sensitive data here
+# These are examples only - DO NOT store actual credentials here
 # ansible_user=your_user
 # ansible_ssh_private_key_file=~/.ssh/id_rsa
 
 [windows:vars]
+# Windows-specific connection settings
 ansible_connection=winrm
 ansible_winrm_server_cert_validation=ignore
-ansible_winrm_transport=kerberos # or basic, ntlm, credssp
+ansible_winrm_transport=kerberos
+ansible_port=5986
