@@ -1,0 +1,86 @@
+[
+  {
+    "variable": "cloud_provider",
+    "question_name": "Cloud Provider",
+    "type": "multiplechoice",
+    "choices": ["aws", "azure", "gcp"],
+    "default": "aws",
+    "required": true,
+    "help_text": "Select your cloud provider for the complete workflow"
+  },
+  {
+    "variable": "environment_name",
+    "question_name": "Environment Name",
+    "type": "text",
+    "required": true,
+    "help_text": "Name for your cloud environment (used for resource naming and tagging)"
+  },
+  {
+    "variable": "setup_auth",
+    "question_name": "Setup Authentication",
+    "type": "multiplechoice",
+    "choices": ["yes", "no"],
+    "default": "yes",
+    "required": false,
+    "help_text": "Configure cloud provider authentication"
+  },
+  {
+    "variable": "setup_environment",
+    "question_name": "Setup Environment (Networks/Security)",
+    "type": "multiplechoice",
+    "choices": ["yes", "no"],
+    "default": "yes",
+    "required": false,
+    "help_text": "Create VPC/VNet, subnets, and security groups"
+  },
+  {
+    "variable": "provision_servers",
+    "question_name": "Provision Servers",
+    "type": "multiplechoice",
+    "choices": ["yes", "no"],
+    "default": "no",
+    "required": false,
+    "help_text": "Create virtual machines/instances"
+  },
+  {
+    "variable": "server_name",
+    "question_name": "Server Name (if provisioning)",
+    "type": "text",
+    "required": false,
+    "when": "provision_servers == 'yes'",
+    "help_text": "Name for the server to provision"
+  },
+  {
+    "variable": "provision_storage",
+    "question_name": "Provision Storage",
+    "type": "multiplechoice",
+    "choices": ["yes", "no"],
+    "default": "no",
+    "required": false,
+    "help_text": "Create persistent volumes/disks"
+  },
+  {
+    "variable": "volume_name",
+    "question_name": "Volume Name (if provisioning)",
+    "type": "text",
+    "required": false,
+    "when": "provision_storage == 'yes'",
+    "help_text": "Name for the volume to provision"
+  },
+  {
+    "variable": "audit_resources",
+    "question_name": "Audit Unused Resources",
+    "type": "multiplechoice",
+    "choices": ["yes", "no"],
+    "default": "yes",
+    "required": false,
+    "help_text": "Query and report on unused resources"
+  },
+  {
+    "variable": "region",
+    "question_name": "Region/Location",
+    "type": "text",
+    "required": true,
+    "help_text": "Primary region for resource deployment"
+  }
+]

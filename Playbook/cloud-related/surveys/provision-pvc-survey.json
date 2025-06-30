@@ -4,74 +4,90 @@
     "question_name": "Cloud Provider",
     "type": "multiplechoice",
     "choices": ["aws", "azure", "gcp"],
-    "required": true
+    "default": "aws",
+    "required": true,
+    "help_text": "Select your cloud provider for storage provisioning"
   },
   {
-    "variable": "pvc_name",
-    "question_name": "PVC/Volume Name",
+    "variable": "volume_name",
+    "question_name": "Volume Name",
     "type": "text",
-    "required": true
+    "required": true,
+    "help_text": "Name for the persistent volume/disk"
   },
   {
-    "variable": "size",
-    "question_name": "Size (e.g., 10Gi)",
-    "type": "text",
-    "required": true
+    "variable": "volume_size",
+    "question_name": "Volume Size (GB)",
+    "type": "integer",
+    "required": true,
+    "min": 1,
+    "max": 16384,
+    "default": 10,
+    "help_text": "Size of the volume in gigabytes"
   },
   {
     "variable": "region",
     "question_name": "Region/Zone",
     "type": "text",
     "required": true,
-    "when": "cloud_provider == 'aws' or cloud_provider == 'azure' or cloud_provider == 'gcp'"
+    "help_text": "AWS region, Azure location, or GCP zone"
   },
   {
     "variable": "resource_group",
     "question_name": "Resource Group (Azure only)",
     "type": "text",
-    "required": true,
+    "required": false,
     "when": "cloud_provider == 'azure'"
   },
   {
     "variable": "gcp_project",
     "question_name": "GCP Project (GCP only)",
     "type": "text",
-    "required": true,
+    "required": false,
     "when": "cloud_provider == 'gcp'"
   },
   {
-    "variable": "storage_class",
-    "question_name": "Storage Class (K8s, AWS, Azure, GCP)",
+    "variable": "zone",
+    "question_name": "GCP Zone (GCP only)",
     "type": "text",
     "required": false,
-    "when": "cloud_provider == 'aws' or cloud_provider == 'azure' or cloud_provider == 'gcp'"
+    "when": "cloud_provider == 'gcp'",
+    "help_text": "GCP zone for disk placement"
   },
   {
-    "variable": "access_modes",
-    "question_name": "Access Modes (comma separated, K8s only)",
-    "type": "text",
-    "required": false,
-    "when": "cloud_provider == 'k8s'"
-  },
-  {
-    "variable": "namespace",
-    "question_name": "Namespace (K8s only)",
-    "type": "text",
-    "required": false,
-    "when": "cloud_provider == 'k8s'"
-  },
-  {
-    "variable": "save_prefilled_vars",
-    "question_name": "Save these answers to a prefilled file for future reuse?",
+    "variable": "volume_type",
+    "question_name": "Volume Type (AWS only)",
     "type": "multiplechoice",
-    "choices": ["yes", "no"],
-    "required": false
+    "choices": ["gp2", "gp3", "io1", "io2"],
+    "default": "gp3",
+    "required": false,
+    "when": "cloud_provider == 'aws'"
   },
   {
-    "variable": "prefilled_vars_file_name",
-    "question_name": "Prefilled Vars File Name (if saving)",
-    "type": "text",
+    "variable": "storage_account_type",
+    "question_name": "Storage Account Type (Azure only)",
+    "type": "multiplechoice",
+    "choices": ["Standard_LRS", "Standard_GRS", "Premium_LRS"],
+    "default": "Standard_LRS",
     "required": false,
-    "when": "save_prefilled_vars == 'yes'"
+    "when": "cloud_provider == 'azure'"
+  },
+  {
+    "variable": "disk_type",
+    "question_name": "Disk Type (GCP only)",
+    "type": "multiplechoice",
+    "choices": ["pd-standard", "pd-ssd", "pd-balanced"],
+    "default": "pd-standard",
+    "required": false,
+    "when": "cloud_provider == 'gcp'"
+  },
+  {
+    "variable": "environment",
+    "question_name": "Environment Tag",
+    "type": "multiplechoice",
+    "choices": ["development", "staging", "production"],
+    "default": "development",
+    "required": false,
+    "help_text": "Environment tag for resource organization"
   }
 ]

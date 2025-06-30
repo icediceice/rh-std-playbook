@@ -4,14 +4,16 @@
     "question_name": "Cloud Provider",
     "type": "multiplechoice",
     "choices": ["aws", "azure", "gcp"],
-    "required": true
+    "default": "aws",
+    "required": true,
+    "help_text": "Select your cloud provider to audit unused resources"
   },
   {
     "variable": "region",
     "question_name": "Region/Zone",
     "type": "text",
     "required": true,
-    "when": "cloud_provider == 'aws' or cloud_provider == 'azure' or cloud_provider == 'gcp'"
+    "help_text": "AWS region, Azure location, or GCP zone to scan for unused resources"
   },
   {
     "variable": "resource_group",
@@ -31,13 +33,24 @@
     "variable": "unused_resource_output_file",
     "question_name": "Output File Name (optional)",
     "type": "text",
-    "required": false
+    "required": false,
+    "help_text": "Custom filename for the unused resources report"
+  },
+  {
+    "variable": "send_email_report",
+    "question_name": "Send Email Report",
+    "type": "multiplechoice",
+    "choices": ["yes", "no"],
+    "default": "no",
+    "required": false,
+    "help_text": "Send the report via email (requires SMTP configuration)"
   },
   {
     "variable": "save_prefilled_vars",
     "question_name": "Save these answers to a prefilled file for future reuse?",
     "type": "multiplechoice",
     "choices": ["yes", "no"],
+    "default": "no",
     "required": false
   },
   {

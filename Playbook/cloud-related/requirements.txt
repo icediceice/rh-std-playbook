@@ -1,0 +1,15 @@
+# Python requirements for cloud operations
+# Required packages for AWS, Azure, and GCP modules
+
+boto3>=1.26.0
+botocore>=1.29.0
+azure-cli-core>=2.40.0
+azure-mgmt-compute>=29.0.0
+azure-mgmt-network>=21.0.0
+azure-mgmt-storage>=20.0.0
+azure-identity>=1.12.0
+google-auth>=2.15.0
+google-cloud-compute>=1.8.0
+google-cloud-storage>=2.7.0
+requests>=2.28.0
+pyyaml>=6.0

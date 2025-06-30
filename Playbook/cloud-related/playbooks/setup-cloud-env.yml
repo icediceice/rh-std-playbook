@@ -1,0 +1,156 @@
+---
+# Playbook: Setup Cloud Environment (Network, Security, etc.)
+#
+# This playbook sets up core cloud infrastructure using AAP credentials directly.
+# Optimized for AAP 2.5 execution environments.
+#
+- name: Setup Cloud Environment
+  hosts: all
+  gather_facts: false
+
+  tasks:
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - cloud_provider is defined
+          - environment_name is defined
+          - region is defined
+        fail_msg: "Required variables: cloud_provider, environment_name, region"
+
+    - name: Create AWS VPC
+      amazon.aws.ec2_vpc:
+        name: "{{ environment_name }}-vpc"
+        cidr_block: "{{ vpc_cidr | default('10.0.0.0/16') }}"
+        region: "{{ region }}"
+        state: present
+        tags:
+          Name: "{{ environment_name }}-vpc"
+          Environment: "{{ environment_name }}"
+          ManagedBy: "AAP"
+      register: aws_vpc
+      when: cloud_provider == 'aws'
+
+    - name: Create AWS subnet
+      amazon.aws.ec2_vpc_subnet:
+        vpc_id: "{{ aws_vpc.vpc.id }}"
+        cidr: "{{ subnet_cidr | default('10.0.1.0/24') }}"
+        region: "{{ region }}"
+        state: present
+        tags:
+          Name: "{{ environment_name }}-subnet"
+          Environment: "{{ environment_name }}"
+          ManagedBy: "AAP"
+      register: aws_subnet
+      when: cloud_provider == 'aws'
+
+    - name: Create AWS security group
+      amazon.aws.ec2_security_group:
+        name: "{{ environment_name }}-sg"
+        description: "Security group for {{ environment_name }}"
+        vpc_id: "{{ aws_vpc.vpc.id }}"
+        region: "{{ region }}"
+        rules:
+          - proto: tcp
+            ports: "{{ allowed_ports.split(',') | default(['22', '80', '443']) }}"
+            cidr_ip: "{{ allowed_cidr | default('0.0.0.0/0') }}"
+        tags:
+          Name: "{{ environment_name }}-sg"
+          Environment: "{{ environment_name }}"
+          ManagedBy: "AAP"
+      when: cloud_provider == 'aws'
+
+    - name: Create Azure virtual network
+      azure.azcollection.azure_rm_virtualnetwork:
+        name: "{{ environment_name }}-vnet"
+        resource_group: "{{ resource_group }}"
+        location: "{{ region }}"
+        address_prefixes_cidr:
+          - "{{ vpc_cidr | default('10.0.0.0/16') }}"
+        state: present
+        tags:
+          Name: "{{ environment_name }}-vnet"
+          Environment: "{{ environment_name }}"
+          ManagedBy: "AAP"
+      register: azure_vnet
+      when: cloud_provider == 'azure'
+
+    - name: Create Azure subnet
+      azure.azcollection.azure_rm_subnet:
+        name: "{{ environment_name }}-subnet"
+        resource_group: "{{ resource_group }}"
+        virtual_network_name: "{{ environment_name }}-vnet"
+        address_prefix_cidr: "{{ subnet_cidr | default('10.0.1.0/24') }}"
+        state: present
+      when: cloud_provider == 'azure'
+
+    - name: Create Azure network security group
+      azure.azcollection.azure_rm_securitygroup:
+        name: "{{ environment_name }}-nsg"
+        resource_group: "{{ resource_group }}"
+        location: "{{ region }}"
+        rules:
+          - name: "AllowSSH"
+            protocol: Tcp
+            destination_port_range: "22"
+            access: Allow
+            priority: 1001
+            direction: Inbound
+          - name: "AllowHTTP"
+            protocol: Tcp
+            destination_port_range: "80"
+            access: Allow
+            priority: 1002
+            direction: Inbound
+          - name: "AllowHTTPS"
+            protocol: Tcp
+            destination_port_range: "443"
+            access: Allow
+            priority: 1003
+            direction: Inbound
+        tags:
+          Name: "{{ environment_name }}-nsg"
+          Environment: "{{ environment_name }}"
+          ManagedBy: "AAP"
+      when: cloud_provider == 'azure'
+
+    - name: Create GCP VPC network
+      google.cloud.gcp_compute_network:
+        name: "{{ environment_name }}-vpc"
+        project: "{{ gcp_project }}"
+        auto_create_subnetworks: false
+        state: present
+      register: gcp_network
+      when: cloud_provider == 'gcp'
+
+    - name: Create GCP subnet
+      google.cloud.gcp_compute_subnetwork:
+        name: "{{ environment_name }}-subnet"
+        network: "{{ gcp_network }}"
+        ip_cidr_range: "{{ subnet_cidr | default('10.0.1.0/24') }}"
+        region: "{{ region }}"
+        project: "{{ gcp_project }}"
+        state: present
+      when: cloud_provider == 'gcp'
+
+    - name: Create GCP firewall rules
+      google.cloud.gcp_compute_firewall:
+        name: "{{ environment_name }}-firewall"
+        network: "{{ gcp_network }}"
+        project: "{{ gcp_project }}"
+        allowed:
+          - ip_protocol: tcp
+            ports: "{{ allowed_ports.split(',') | default(['22', '80', '443']) }}"
+        source_ranges:
+          - "{{ allowed_cidr | default('0.0.0.0/0') }}"
+        state: present
+      when: cloud_provider == 'gcp'
+
+    - name: Display environment setup results
+      ansible.builtin.debug:
+        msg: |
+          Cloud environment setup completed successfully!
+          Provider: {{ cloud_provider }}
+          Environment: {{ environment_name }}
+          Region: {{ region }}
+          VPC CIDR: {{ vpc_cidr | default('10.0.0.0/16') }}
+          Subnet CIDR: {{ subnet_cidr | default('10.0.1.0/24') }}

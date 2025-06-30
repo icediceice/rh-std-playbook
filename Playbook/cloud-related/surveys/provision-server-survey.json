@@ -4,6 +4,7 @@
     "question_name": "Cloud Provider",
     "type": "multiplechoice",
     "choices": ["aws", "azure", "gcp"],
+    "default": "aws",
     "required": true
   },
   {
@@ -16,38 +17,45 @@
     "variable": "image_id",
     "question_name": "Image ID (AMI, Azure Image, GCP Image)",
     "type": "text",
-    "required": true
+    "required": true,
+    "help_text": "For AWS: AMI ID, Azure: Image URN, GCP: Image name."
   },
   {
     "variable": "instance_type",
     "question_name": "Instance Type (EC2, VM Size, GCP Machine Type)",
     "type": "text",
-    "required": true
+    "required": true,
+    "help_text": "e.g., t2.micro, Standard_B1s, n1-standard-1"
   },
   {
     "variable": "region",
     "question_name": "Region/Zone",
     "type": "text",
     "required": true,
+    "help_text": "e.g., us-east-1, eastus, us-central1",
     "when": "cloud_provider == 'aws' or cloud_provider == 'azure' or cloud_provider == 'gcp'"
   },
   {
     "variable": "resource_group",
     "question_name": "Resource Group (Azure only)",
     "type": "text",
-    "required": true,
+    "required": false,
     "when": "cloud_provider == 'azure'"
   },
   {
     "variable": "gcp_project",
     "question_name": "GCP Project (GCP only)",
     "type": "text",
-    "required": true,
+    "required": false,
     "when": "cloud_provider == 'gcp'"
   },
   {
     "variable": "admin_username",
     "question_name": "Admin Username (Azure only)",
+    "type": "text",
+    "required": false,
+    "when": "cloud_provider == 'azure'"
+  },
     "type": "text",
     "required": false,
     "when": "cloud_provider == 'azure'"
@@ -85,6 +93,7 @@
     "question_name": "Save these answers to a prefilled file for future reuse?",
     "type": "multiplechoice",
     "choices": ["yes", "no"],
+    "default": "no",
     "required": false
   },
   {

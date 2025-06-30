@@ -1,0 +1,159 @@
+---
+# Playbook: Query Unused Cloud Resources
+#
+# This playbook audits and reports on unused or idle resources
+# using AAP credentials directly. Optimized for AAP 2.5 execution environments.
+#
+- name: Query Unused Cloud Resources
+  hosts: all
+  gather_facts: false
+
+  vars:
+    output_file: "{{ unused_resource_output_file | default('unused_resources_' + ansible_date_time.date + '.txt') }}"
+    report_email_enabled: "{{ send_email_report | default('no') == 'yes' and smtp_host is defined and report_email_to is defined }}"
+
+  tasks:
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - cloud_provider is defined
+          - region is defined
+        fail_msg: "Required variables: cloud_provider, region"
+
+    - name: Query AWS unused EC2 instances (stopped)
+      amazon.aws.ec2_instance_info:
+        region: "{{ region }}"
+        filters:
+          instance-state-name: ["stopped"]
+      register: aws_stopped_instances
+      when: cloud_provider == 'aws'
+
+    - name: Query AWS unused EBS volumes (available)
+      amazon.aws.ec2_vol_info:
+        region: "{{ region }}"
+        filters:
+          status: ["available"]
+      register: aws_unused_volumes
+      when: cloud_provider == 'aws'
+
+    - name: Query Azure deallocated VMs
+      azure.azcollection.azure_rm_virtualmachine_info:
+        resource_group: "{{ resource_group | default(omit) }}"
+      register: azure_vms
+      when: cloud_provider == 'azure'
+
+    - name: Filter Azure deallocated VMs
+      ansible.builtin.set_fact:
+        azure_unused_vms: "{{ azure_vms.vms | selectattr('power_state', 'equalto', 'VM deallocated') | list }}"
+      when: 
+        - cloud_provider == 'azure'
+        - azure_vms is defined
+
+    - name: Query Azure unattached disks
+      azure.azcollection.azure_rm_manageddisk_info:
+        resource_group: "{{ resource_group | default(omit) }}"
+      register: azure_disks
+      when: cloud_provider == 'azure'
+
+    - name: Filter Azure unattached disks
+      ansible.builtin.set_fact:
+        azure_unused_disks: "{{ azure_disks.ansible_info.azure_manageddisks | selectattr('managed_by', 'undefined') | list }}"
+      when: 
+        - cloud_provider == 'azure'
+        - azure_disks is defined
+
+    - name: Query GCP stopped instances
+      google.cloud.gcp_compute_instance_info:
+        zone: "{{ region }}"
+        project: "{{ gcp_project }}"
+        filters:
+          - status = "TERMINATED"
+      register: gcp_stopped_instances
+      when: cloud_provider == 'gcp'
+
+    - name: Query GCP unattached disks
+      google.cloud.gcp_compute_disk_info:
+        zone: "{{ region }}"
+        project: "{{ gcp_project }}"
+      register: gcp_disks
+      when: cloud_provider == 'gcp'
+
+    - name: Filter GCP unattached disks
+      ansible.builtin.set_fact:
+        gcp_unused_disks: "{{ gcp_disks.resources | selectattr('users', 'undefined') | list }}"
+      when: 
+        - cloud_provider == 'gcp'
+        - gcp_disks is defined
+
+    - name: Generate unused resources summary
+      ansible.builtin.set_fact:
+        unused_resources_summary: |
+          Unused Resources Report - {{ cloud_provider | upper }}
+          Generated: {{ ansible_date_time.iso8601 }}
+          Region: {{ region }}
+          
+          {% if cloud_provider == 'aws' %}
+          Stopped EC2 Instances: {{ aws_stopped_instances.instances | length }}
+          {% for instance in aws_stopped_instances.instances %}
+          - {{ instance.instance_id }} ({{ instance.tags.Name | default('Unnamed') }})
+          {% endfor %}
+          
+          Unattached EBS Volumes: {{ aws_unused_volumes.volumes | length }}
+          {% for volume in aws_unused_volumes.volumes %}
+          - {{ volume.id }} ({{ volume.size }}GB)
+          {% endfor %}
+          {% endif %}
+          
+          {% if cloud_provider == 'azure' %}
+          Deallocated VMs: {{ azure_unused_vms | length }}
+          {% for vm in azure_unused_vms %}
+          - {{ vm.name }} ({{ vm.vm_size }})
+          {% endfor %}
+          
+          Unattached Disks: {{ azure_unused_disks | length }}
+          {% for disk in azure_unused_disks %}
+          - {{ disk.name }} ({{ disk.disk_size_gb }}GB)
+          {% endfor %}
+          {% endif %}
+          
+          {% if cloud_provider == 'gcp' %}
+          Stopped Instances: {{ gcp_stopped_instances.resources | length }}
+          {% for instance in gcp_stopped_instances.resources %}
+          - {{ instance.name }} ({{ instance.machineType.split('/')[-1] }})
+          {% endfor %}
+          
+          Unattached Disks: {{ gcp_unused_disks | length }}
+          {% for disk in gcp_unused_disks %}
+          - {{ disk.name }} ({{ disk.sizeGb }}GB)
+          {% endfor %}
+          {% endif %}
+
+    - name: Save unused resources report to file
+      ansible.builtin.copy:
+        content: "{{ unused_resources_summary }}"
+        dest: "{{ output_file }}"
+        mode: '0644'
+      delegate_to: localhost
+
+    - name: Send email report (if configured)
+      community.general.mail:
+        host: "{{ smtp_host }}"
+        port: "{{ smtp_port | default(587) }}"
+        username: "{{ smtp_username | default(omit) }}"
+        password: "{{ smtp_password | default(omit) }}"
+        to: "{{ report_email_to }}"
+        from: "{{ report_email_from }}"
+        subject: "Unused Cloud Resources Report - {{ cloud_provider | upper }}"
+        body: "{{ unused_resources_summary }}"
+        secure: starttls
+      delegate_to: localhost
+      when: report_email_enabled | bool
+
+    - name: Display report summary
+      ansible.builtin.debug:
+        msg: |
+          Unused resources audit completed for {{ cloud_provider }}
+          Report saved to: {{ output_file }}
+          {% if report_email_enabled %}
+          Email report sent to: {{ report_email_to }}
+          {% endif %}

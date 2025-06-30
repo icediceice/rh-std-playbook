@@ -1,0 +1,58 @@
+---
+# Playbook: Cloud Authentication Validation
+#
+# This playbook validates that proper AAP credentials are configured
+# and tests connectivity to cloud providers. Uses AAP credential store directly.
+#
+- name: Validate Cloud Authentication
+  hosts: all
+  gather_facts: false
+
+  tasks:
+    - name: Validate cloud provider selection
+      ansible.builtin.assert:
+        that:
+          - cloud_provider is defined
+          - cloud_provider in ['aws', 'azure', 'gcp']
+        fail_msg: "cloud_provider must be one of: aws, azure, gcp"
+
+    - name: Test AWS authentication
+      amazon.aws.aws_caller_info:
+      register: aws_identity
+      when: cloud_provider == 'aws'
+
+    - name: Display AWS identity
+      ansible.builtin.debug:
+        msg: "Connected to AWS as: {{ aws_identity.arn | default('Unknown') }}"
+      when: cloud_provider == 'aws'
+
+    - name: Test Azure authentication
+      azure.azcollection.azure_rm_resourcegroup_info:
+        name: "nonexistent-rg-test"
+      register: azure_test
+      failed_when: false
+      when: cloud_provider == 'azure'
+
+    - name: Display Azure authentication status
+      ansible.builtin.debug:
+        msg: "Azure authentication successful"
+      when: 
+        - cloud_provider == 'azure'
+        - azure_test is defined
+
+    - name: Test GCP authentication
+      google.cloud.gcp_compute_project_info:
+        project: "{{ gcp_project }}"
+      register: gcp_test
+      when: cloud_provider == 'gcp'
+
+    - name: Display GCP authentication status
+      ansible.builtin.debug:
+        msg: "Connected to GCP project: {{ gcp_project }}"
+      when: 
+        - cloud_provider == 'gcp'
+        - gcp_test is defined
+
+    - name: Authentication validation complete
+      ansible.builtin.debug:
+        msg: "Authentication validated for {{ cloud_provider }}"

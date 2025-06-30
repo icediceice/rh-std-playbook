@@ -1,0 +1,9 @@
+# System package dependencies for cloud operations
+# Required for AAP 2.5 execution environment
+
+gcc [platform:rpm compile]
+python3-devel [platform:rpm compile]
+openssl-devel [platform:rpm compile]
+libffi-devel [platform:rpm compile]
+git [platform:rpm]
+rsync [platform:rpm]

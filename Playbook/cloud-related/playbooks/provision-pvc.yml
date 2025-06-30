@@ -1,0 +1,72 @@
+---
+# Playbook: Provision Cloud Persistent Volume/Storage
+#
+# This playbook provisions persistent volumes and storage resources
+# using AAP credentials directly. Optimized for AAP 2.5 execution environments.
+#
+- name: Provision Cloud Persistent Volume
+  hosts: all
+  gather_facts: false
+
+  tasks:
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - cloud_provider is defined
+          - volume_name is defined
+          - volume_size is defined
+          - region is defined
+        fail_msg: "Required variables: cloud_provider, volume_name, volume_size, region"
+
+    - name: Provision AWS EBS volume
+      amazon.aws.ec2_vol:
+        name: "{{ volume_name }}"
+        volume_size: "{{ volume_size }}"
+        volume_type: "{{ volume_type | default('gp3') }}"
+        region: "{{ region }}"
+        state: present
+        tags:
+          Name: "{{ volume_name }}"
+          Environment: "{{ environment | default('development') }}"
+          ManagedBy: "AAP"
+      register: aws_volume
+      when: cloud_provider == 'aws'
+
+    - name: Provision Azure managed disk
+      azure.azcollection.azure_rm_manageddisk:
+        name: "{{ volume_name }}"
+        resource_group: "{{ resource_group }}"
+        location: "{{ region }}"
+        disk_size_gb: "{{ volume_size }}"
+        storage_account_type: "{{ storage_account_type | default('Standard_LRS') }}"
+        state: present
+        tags:
+          Name: "{{ volume_name }}"
+          Environment: "{{ environment | default('development') }}"
+          ManagedBy: "AAP"
+      register: azure_disk
+      when: cloud_provider == 'azure'
+
+    - name: Provision GCP persistent disk
+      google.cloud.gcp_compute_disk:
+        name: "{{ volume_name }}"
+        size_gb: "{{ volume_size }}"
+        zone: "{{ region }}"
+        project: "{{ gcp_project }}"
+        type: "{{ disk_type | default('pd-standard') }}"
+        state: present
+        labels:
+          name: "{{ volume_name }}"
+          environment: "{{ environment | default('development') }}"
+          managed_by: "aap"
+      register: gcp_disk
+      when: cloud_provider == 'gcp'
+
+    - name: Display provisioning results
+      ansible.builtin.debug:
+        msg: |
+          Volume provisioned successfully!
+          Provider: {{ cloud_provider }}
+          Name: {{ volume_name }}
+          Size: {{ volume_size }}GB
+          Region: {{ region }}

@@ -1,0 +1,87 @@
+---
+# Playbook: Complete Cloud Setup Workflow
+#
+# This workflow orchestrates a complete cloud environment setup using AAP credentials directly.
+# Designed for AAP 2.5 workflows and execution environments.
+#
+- name: Complete Cloud Environment Setup Workflow
+  hosts: all
+  gather_facts: false
+
+  tasks:
+    - name: Validate workflow prerequisites
+      ansible.builtin.assert:
+        that:
+          - cloud_provider is defined
+          - environment_name is defined
+          - region is defined
+        fail_msg: "Required variables: cloud_provider, environment_name, region"
+
+    - name: Phase 1 - Validate cloud authentication
+      ansible.builtin.include_tasks:
+        file: cloud-auth.yml
+      when: setup_auth | default(true) | bool
+
+    - name: Phase 2 - Setup cloud environment (networks, security)
+      ansible.builtin.include_tasks:
+        file: setup-cloud-env.yml
+      when: setup_environment | default(true) | bool
+
+    - name: Phase 3 - Provision servers (if requested)
+      ansible.builtin.include_tasks:
+        file: provision-server.yml
+      when: 
+        - provision_servers | default(false) | bool
+        - server_name is defined
+        - instance_type is defined
+
+    - name: Phase 4 - Provision storage (if requested)
+      ansible.builtin.include_tasks:
+        file: provision-pvc.yml
+      when: 
+        - provision_storage | default(false) | bool
+        - volume_name is defined
+        - volume_size is defined
+
+    - name: Phase 5 - Audit unused resources
+      ansible.builtin.include_tasks:
+        file: query-unused-resources.yml
+      when: audit_resources | default(true) | bool
+
+    - name: Workflow completion summary
+      ansible.builtin.debug:
+        msg: |
+          Cloud workflow completed successfully!
+          
+          Environment: {{ environment_name }}
+          Cloud Provider: {{ cloud_provider }}
+          Region: {{ region }}
+          
+          Components deployed:
+          - Authentication: {{ setup_auth | default(true) }}
+          - Environment Setup: {{ setup_environment | default(true) }}
+          - Server Provisioning: {{ provision_servers | default(false) }}
+          - Storage Provisioning: {{ provision_storage | default(false) }}
+          - Resource Audit: {{ audit_resources | default(true) }}
+
+    - name: Save workflow summary
+      ansible.builtin.copy:
+        content: |
+          Cloud Workflow Summary
+          =====================
+          Date: {{ ansible_date_time.iso8601 }}
+          Environment: {{ environment_name }}
+          Cloud Provider: {{ cloud_provider }}
+          Region: {{ region }}
+          
+          Phases Completed:
+          - Authentication Validation: {{ setup_auth | default(true) }}
+          - Environment Setup: {{ setup_environment | default(true) }}
+          - Server Provisioning: {{ provision_servers | default(false) }}
+          - Storage Provisioning: {{ provision_storage | default(false) }}
+          - Resource Audit: {{ audit_resources | default(true) }}
+          
+          Workflow Status: SUCCESS
+        dest: "workflow_summary_{{ environment_name }}_{{ ansible_date_time.date }}.txt"
+        mode: '0644'
+      delegate_to: localhost

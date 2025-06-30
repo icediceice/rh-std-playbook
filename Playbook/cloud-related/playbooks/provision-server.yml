@@ -1,24 +1,82 @@
 ---
 # Playbook: Provision Cloud Server
 #
-# This playbook provisions a cloud server and its associated resources.
-# It is designed for use with the Ansible Automation Platform 2.5 web console.
+# This playbook provisions a cloud server using AAP credentials directly.
+# Optimized for AAP 2.5 execution environments with credential store integration.
 #
 - name: Provision Cloud Server
-  hosts: localhost
+  hosts: all
   gather_facts: false
-  connection: local
-
-  vars:
-    # These variables are expected to be provided by the AAP survey
-    cloud_provider: "{{ cloud_provider | default('aws') }}"
-    resource_group: "{{ resource_group | default('default') }}"
-    location: "{{ location | default('us-east-1') }}"
-    server_name: "{{ server_name | default('my-server') }}"
-    instance_type: "{{ instance_type | default('t2.micro') }}"
-    image: "{{ image | default('ami-0c55b159cbfafe1f0') }}" # Default to Amazon Linux 2
 
   tasks:
-    - name: Include cloud-specific provisioning tasks
-      include_role:
-        name: "cloud_server_{{ cloud_provider }}"
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - cloud_provider is defined
+          - server_name is defined
+          - instance_type is defined
+          - region is defined
+        fail_msg: "Required variables: cloud_provider, server_name, instance_type, region"
+
+    - name: Provision AWS EC2 instance
+      amazon.aws.ec2_instance:
+        name: "{{ server_name }}"
+        instance_type: "{{ instance_type }}"
+        image_id: "{{ image_id }}"
+        region: "{{ region }}"
+        state: present
+        wait: true
+        tags:
+          Name: "{{ server_name }}"
+          Environment: "{{ environment | default('development') }}"
+          ManagedBy: "AAP"
+      register: aws_instance
+      when: cloud_provider == 'aws'
+
+    - name: Provision Azure virtual machine
+      azure.azcollection.azure_rm_virtualmachine:
+        name: "{{ server_name }}"
+        resource_group: "{{ resource_group }}"
+        location: "{{ region }}"
+        vm_size: "{{ instance_type }}"
+        admin_username: "{{ admin_username }}"
+        image:
+          offer: "{{ image_offer | default('0001-com-ubuntu-server-focal') }}"
+          publisher: "{{ image_publisher | default('Canonical') }}"
+          sku: "{{ image_sku | default('20_04-lts-gen2') }}"
+          version: "{{ image_version | default('latest') }}"
+        state: present
+        tags:
+          Name: "{{ server_name }}"
+          Environment: "{{ environment | default('development') }}"
+          ManagedBy: "AAP"
+      register: azure_vm
+      when: cloud_provider == 'azure'
+
+    - name: Provision GCP compute instance
+      google.cloud.gcp_compute_instance:
+        name: "{{ server_name }}"
+        machine_type: "{{ instance_type }}"
+        zone: "{{ region }}"
+        project: "{{ gcp_project }}"
+        disks:
+          - auto_delete: true
+            boot: true
+            initialize_params:
+              source_image: "{{ image_id | default('projects/ubuntu-os-cloud/global/images/family/ubuntu-2004-lts') }}"
+        state: present
+        labels:
+          name: "{{ server_name }}"
+          environment: "{{ environment | default('development') }}"
+          managed_by: "aap"
+      register: gcp_instance
+      when: cloud_provider == 'gcp'
+
+    - name: Display provisioning results
+      ansible.builtin.debug:
+        msg: |
+          Server provisioned successfully!
+          Provider: {{ cloud_provider }}
+          Name: {{ server_name }}
+          Type: {{ instance_type }}
+          Region: {{ region }}

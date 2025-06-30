@@ -1,0 +1,26 @@
+---
+# Execution Environment Configuration for AAP 2.5
+# This file defines the container image and dependencies for cloud operations
+
+version: 3
+
+images:
+  base_image:
+    name: 'quay.io/ansible/creator-base:v0.19.0'
+
+dependencies:
+  galaxy: requirements.yml
+  python: requirements.txt
+  system: bindep.txt
+
+additional_build_steps:
+  prepend_base:
+    - RUN whoami
+    - RUN cat /etc/os-release
+  prepend_galaxy:
+    - COPY _build/requirements.yml /tmp/requirements.yml
+  prepend_final:
+    - RUN ls -la /etc
+
+build_arg_defaults:
+  ANSIBLE_GALAXY_CLI_COLLECTION_OPTS: "--pre"
