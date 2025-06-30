@@ -1,81 +1,78 @@
 ---
-# AAP 2.5 Optimized Linux Patching Role
-# Tasks for patching Linux systems (RedHat/Debian families)
+# AAP 2.5 Execution Environment Compatible Linux Patching Role
+# Optimized for execution environments with proper error handling
 
-- name: Detect Linux distribution family
-  debug:
-    msg: "Detected OS family: {{ ansible_os_family }}, Distribution: {{ ansible_distribution }}"
+- name: Display Linux patching information
+  ansible.builtin.debug:
+    msg:
+      - "Starting Linux patching for {{ inventory_hostname }}"
+      - "OS Family: {{ ansible_os_family }}"
+      - "Distribution: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+      - "Excluded packages: {{ linux_exclude_packages | default('None') }}"
 
-- name: Validate supported Linux distribution
-  assert:
-    that:
-      - ansible_os_family in ["RedHat", "Debian"]
-    fail_msg: "Unsupported Linux distribution: {{ ansible_distribution }}"
-    success_msg: "Supported Linux distribution detected: {{ ansible_distribution }}"
-
-- name: Create patching directories
-  file:
-    path: "{{ item }}"
-    state: directory
-    mode: '0755'
-  loop:
-    - /var/log/aap-patching
-    - /tmp/aap-patching-backup
-  become: true
-
-- name: Backup current package list
-  shell: |
-    if [ -f /usr/bin/rpm ]; then
-      rpm -qa | sort > /tmp/aap-patching-backup/packages-before-{{ ansible_date_time.epoch }}.txt
-    elif [ -f /usr/bin/dpkg ]; then
-      dpkg -l | grep '^ii' > /tmp/aap-patching-backup/packages-before-{{ ansible_date_time.epoch }}.txt
-    fi
-  args:
-    creates: "/tmp/aap-patching-backup/packages-before-{{ ansible_date_time.epoch }}.txt"
-  become: true
-
-- name: Ensure yum-utils is installed for reboot check (RedHat family)
-  ansible.builtin.yum:
-    name: yum-utils
-    state: present
+- name: Update package cache (RedHat family)
+  ansible.builtin.dnf:
+    update_cache: true
   when: ansible_os_family == "RedHat"
   become: true
 
-- name: Apply all available updates (RedHat family)
-  ansible.builtin.yum:
-    name: '*'
-    state: latest
-    exclude: "{{ linux_exclude_packages | default(omit) }}"
-  when: ansible_os_family == "RedHat"
-  become: true
-
-- name: Apply all available updates (Debian family)
+- name: Update package cache (Debian family)
   ansible.builtin.apt:
     update_cache: true
-    upgrade: dist # 'dist' is equivalent to dist-upgrade
-    autoremove: true
-    autoclean: true
-    dpkg_options: "force-confdef,force-confold" # Avoid interactive prompts
-    exclude: "{{ linux_exclude_packages | default(omit) }}"
+    cache_valid_time: 3600
   when: ansible_os_family == "Debian"
   become: true
 
-- name: Check if a reboot is required (RedHat family)
+- name: Install security updates (RedHat family)
+  ansible.builtin.dnf:
+    name: "*"
+    state: latest
+    security: true
+    exclude: "{{ linux_exclude_packages.split(',') if linux_exclude_packages else omit }}"
+  when: ansible_os_family == "RedHat"
+  become: true
+  register: redhat_patching_result
+
+- name: Install updates (Debian family)
+  ansible.builtin.apt:
+    upgrade: safe
+    autoremove: true
+    autoclean: true
+    exclude: "{{ linux_exclude_packages.split(',') if linux_exclude_packages else omit }}"
+  when: ansible_os_family == "Debian"
+  become: true
+  register: debian_patching_result
+
+- name: Check if reboot is required (RedHat family)
   ansible.builtin.command: needs-restarting -r
-  register: reboot_required_redhat
-  failed_when: reboot_required_redhat.rc > 1
-  changed_when: reboot_required_redhat.rc == 1
+  register: redhat_reboot_check
+  failed_when: redhat_reboot_check.rc > 1
+  changed_when: redhat_reboot_check.rc == 1
   when: ansible_os_family == "RedHat"
 
-- name: Check if a reboot is required (Debian family)
+- name: Check if reboot is required (Debian family)
   ansible.builtin.stat:
     path: /var/run/reboot-required
-  register: reboot_required_file_debian
+  register: debian_reboot_check
   when: ansible_os_family == "Debian"
 
-- name: Set reboot required fact
+- name: Set reboot required fact for RedHat
   ansible.builtin.set_fact:
     patching_reboot_required: true
   when:
-    - ansible_os_family == "RedHat" and reboot_required_redhat.changed
-    - ansible_os_family == "Debian" and reboot_required_file_debian.stat.exists
+    - ansible_os_family == "RedHat"
+    - redhat_reboot_check.rc == 1
+
+- name: Set reboot required fact for Debian
+  ansible.builtin.set_fact:
+    patching_reboot_required: true
+  when:
+    - ansible_os_family == "Debian"
+    - debian_reboot_check.stat.exists
+
+- name: Display patching results
+  ansible.builtin.debug:
+    msg:
+      - "Linux patching completed for {{ inventory_hostname }}"
+      - "Reboot required: {{ patching_reboot_required | default(false) }}"
+      - "Updates applied: {{ 'Yes' if (redhat_patching_result.changed | default(false)) or (debian_patching_result.changed | default(false)) else 'No' }}"

@@ -1,40 +1,23 @@
 ---
-# AAP 2.5 Compatible Collections for OS Patching
-# Updated for Ansible Automation Platform 2.5 requirements
+# AAP 2.5 Execution Environment Collection Requirements
+# These collections are required for the OS patching playbook
+# and will be automatically installed in the execution environment
 
 collections:
-  # Core Ansible Collections
+  # Core Ansible Collections for OS patching
   - name: ansible.posix
     version: ">=1.5.0"
-    source: https://galaxy.ansible.com
-  
-  - name: ansible.utils
-    version: ">=3.0.0"
-    source: https://galaxy.ansible.com
   
   - name: ansible.windows
     version: ">=2.0.0"
-    source: https://galaxy.ansible.com
-
-  # Community Collections
+  
   - name: community.general
     version: ">=8.0.0"
-    source: https://galaxy.ansible.com
-  
+
+  # Additional collections for enhanced functionality
+  - name: ansible.utils
+    version: ">=3.0.0"
+
+  # Windows-specific collections
   - name: community.windows
     version: ">=2.0.0"
-    source: https://galaxy.ansible.com
-
-  # Optional Collections for Extended Functionality
-  - name: community.vmware
-    version: ">=4.0.0"
-    source: https://galaxy.ansible.com
-  
-  - name: microsoft.ad
-    version: ">=1.0.0"
-    source: https://galaxy.ansible.com
-    
-  # Email notification support
-  - name: community.crypto
-    version: ">=2.0.0"
-    source: https://galaxy.ansible.com

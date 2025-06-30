@@ -1,4 +1,0 @@
----
-# defaults file for cloud_network
-vpc_name: "example-vpc"
-region: "us-east-1"

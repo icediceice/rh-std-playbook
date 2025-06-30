@@ -1,7 +1,0 @@
----
-# defaults file for cloud_pvc
-pvc_name: "example-pvc"
-storage_class: "standard"
-size: "10Gi"
-access_modes: ["ReadWriteOnce"]
-namespace: "default"
