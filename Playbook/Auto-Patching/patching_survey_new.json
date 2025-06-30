@@ -4,7 +4,7 @@
   "spec": [
     {
       "question_name": "Target Host Pattern",
-      "question_description": "Select target hosts from AAP inventory. Use 'all' for all hosts, or specify group names defined in your AAP inventory.",
+      "question_description": "Select target hosts from AAP inventory. Use 'all' for all hosts, or specify group names defined in your AAP inventory. This field is required.",
       "variable": "patch_target",
       "type": "multiplechoice",
       "choices": "all\nlinux\nwindows\nrhel\nubuntu\ncentos\nwindows_servers\nproduction\ndevelopment\nstaging",
@@ -13,7 +13,7 @@
     },
     {
       "question_name": "Allow Automatic Reboot",
-      "question_description": "Allow systems to reboot automatically if updates require it. AAP credentials must have sufficient privileges.",
+      "question_description": "Allow systems to reboot automatically if updates require it. AAP credentials must have sufficient privileges. Recommended: 'false' for production unless in a maintenance window.",
       "variable": "allow_reboot",
       "type": "multiplechoice",
       "choices": "true\nfalse",
@@ -22,7 +22,7 @@
     },
     {
       "question_name": "Maintenance Window (Hours)",
-      "question_description": "Maximum time allowed for patching operations in the execution environment (1-8 hours).",
+      "question_description": "Maximum time allowed for patching operations in the execution environment (1-8 hours). This helps ensure jobs do not overrun maintenance windows.",
       "variable": "maintenance_window_hours",
       "type": "integer",
       "required": true,
@@ -32,7 +32,7 @@
     },
     {
       "question_name": "Pre-Patch Snapshot",
-      "question_description": "Create system snapshots before patching (requires appropriate AAP credentials and VM platform support).",
+      "question_description": "Create system snapshots before patching (requires appropriate AAP credentials and VM platform support). Recommended for critical systems.",
       "variable": "pre_patch_snapshot",
       "type": "multiplechoice",
       "choices": "true\nfalse",
@@ -41,7 +41,7 @@
     },
     {
       "question_name": "Windows Update Categories",
-      "question_description": "Select Windows Update categories for Windows hosts (managed through AAP execution environment).",
+      "question_description": "Select Windows Update categories for Windows hosts (managed through AAP execution environment). Use SecurityUpdates and CriticalUpdates for most environments.",
       "variable": "win_update_categories",
       "type": "multiselect",
       "choices": "SecurityUpdates\nCriticalUpdates\nDefinitionUpdates\nUpdates\nUpdateRollups\nServicePacks",
@@ -50,7 +50,7 @@
     },
     {
       "question_name": "Linux Package Exclusions",
-      "question_description": "Comma-separated list of packages to exclude from updates (Linux hosts only, e.g., kernel*,httpd).",
+      "question_description": "Comma-separated list of packages to exclude from updates (Linux hosts only, e.g., kernel*,httpd). Use with caution to avoid missing critical updates.",
       "variable": "linux_exclude_packages",
       "type": "text",
       "required": false,
@@ -60,7 +60,7 @@
     },
     {
       "question_name": "Email Notification",
-      "question_description": "Email address for job completion notifications (optional, sent from execution environment).",
+      "question_description": "Email address for job completion notifications (optional, sent from execution environment). Leave blank to skip notification.",
       "variable": "notification_email",
       "type": "text",
       "required": false,

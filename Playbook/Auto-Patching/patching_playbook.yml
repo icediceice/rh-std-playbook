@@ -49,6 +49,9 @@
           - "Started by: {{ aap_user }}"
       run_once: true
       delegate_to: localhost
+      tags:
+        - always
+        - info
 
     - name: Validate required AAP variables
       ansible.builtin.assert:
@@ -57,12 +60,21 @@
           - ansible_os_family is defined
         fail_msg: "Missing required AAP inventory or fact variables"
         success_msg: "AAP inventory validation successful"
+      tags:
+        - always
+        - validation
 
   roles:
-    - name: linux_patching
+    - role: linux_patching
       when: ansible_os_family in ["RedHat", "Debian"]
-    - name: windows_patching
+      tags:
+        - linux
+        - patch
+    - role: windows_patching
       when: ansible_os_family == "Windows"
+      tags:
+        - windows
+        - patch
 
   post_tasks:
     - name: Log patching completion to execution environment
@@ -72,6 +84,9 @@
           - "OS Family: {{ ansible_os_family }}"
           - "Reboot Required: {{ patching_reboot_required | default(false) }}"
           - "AAP Job ID: {{ aap_job_id }}"
+      tags:
+        - always
+        - summary
 
     - name: Reboot system if required and allowed
       block:
@@ -80,18 +95,28 @@
             reboot_timeout: 600
             test_command: uptime
           when: ansible_os_family != "Windows"
+          tags:
+            - reboot
+            - linux
 
         - name: Reboot Windows system
           ansible.windows.win_reboot:
             reboot_timeout: 600
           when: ansible_os_family == "Windows"
+          tags:
+            - reboot
+            - windows
 
         - name: Log reboot completion
           ansible.builtin.debug:
             msg: "System {{ inventory_hostname }} successfully rebooted"
+          tags:
+            - reboot
       when: 
         - patching_reboot_required | default(false)
         - allow_reboot
+      tags:
+        - reboot
 
     - name: Notify about pending reboot
       ansible.builtin.debug:
@@ -99,6 +124,9 @@
       when: 
         - patching_reboot_required | default(false)
         - not allow_reboot
+      tags:
+        - reboot
+        - warning
 
 - name: Patching Summary and Notification
   hosts: localhost
@@ -119,7 +147,9 @@
           execution_environment: "{{ ansible_runner_job_uuid | default('default-ee') }}"
           total_hosts: "{{ ansible_play_hosts_all | length }}"
           completion_time: "{{ ansible_date_time.iso8601 }}"
-          
+      tags:
+        - always
+        - summary
     - name: Display patching summary
       ansible.builtin.debug:
         msg:
@@ -129,7 +159,9 @@
           - "Total Hosts: {{ patching_summary.total_hosts }}"
           - "Completion Time: {{ patching_summary.completion_time }}"
       when: notification_email == ''
-
+      tags:
+        - always
+        - summary
     - name: Send completion notification via AAP
       community.general.mail:
         to: "{{ notification_email }}"
@@ -147,3 +179,6 @@
         - notification_email != ''
         - notification_email is defined
       ignore_errors: true
+      tags:
+        - always
+        - notification

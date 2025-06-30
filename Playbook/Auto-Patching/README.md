@@ -1,6 +1,11 @@
+
 # AAP 2.5 Execution Environment OS Patching
 
-This playbook provides a comprehensive, enterprise-grade solution for automated OS patching across Linux (RedHat/Debian families) and Windows environments, specifically designed for Ansible Automation Platform (AAP) 2.5 execution environments.
+
+> **Optimized for Red Hat Ansible Automation Platform 2.5 Execution Environments**
+
+This playbook provides a comprehensive, enterprise-grade solution for automated OS patching across Linux (RedHat/Debian families) and Windows environments, specifically designed for Ansible Automation Platform (AAP) 2.5 execution environments. All tasks are tagged, idempotent, and check mode friendly. The playbook and survey are optimized for AAP job templates and execution environments.
+
 
 ## 🚀 Key Features
 
@@ -14,13 +19,13 @@ This playbook provides a comprehensive, enterprise-grade solution for automated 
 
 ## 📋 AAP 2.5 Prerequisites
 
-### Required AAP Components
+### Required AAP Components (AAP 2.5 Best Practices)
 - **Ansible Automation Platform 2.5+** with execution environments enabled
 - **AAP Inventory** with properly configured host groups
 - **AAP Credentials** for target systems (SSH for Linux, WinRM for Windows)
 - **Execution Environment** with required collections (see below)
 
-### Required Collections in Execution Environment
+### Required Collections in Execution Environment (see requirements.yml)
 ```yaml
 # These collections must be available in your execution environment:
 - ansible.posix (>=1.5.0)      # Linux patching operations
@@ -30,7 +35,7 @@ This playbook provides a comprehensive, enterprise-grade solution for automated 
 - community.windows (>=2.0.0)  # Additional Windows modules
 ```
 
-### AAP Inventory Configuration
+### AAP Inventory Configuration (Recommended Groups)
 Ensure your AAP inventory includes these recommended groups:
 - `linux` - All Linux systems
 - `windows` - All Windows systems  
@@ -39,9 +44,10 @@ Ensure your AAP inventory includes these recommended groups:
 - `windows_servers` - Windows Server systems
 - `production`, `development`, `staging` - Environment-based groups
 
-## 🔧 AAP Setup Instructions
 
-### 1. Import Project
+## 🔧 AAP 2.5 Setup & Best Practices
+
+### 1. Import Project (via AAP Web Console)
 1. Navigate to **Projects** in AAP web console
 2. Click **Add** and configure:
    - **Name**: `OS Patching - AAP 2.5`
@@ -49,14 +55,14 @@ Ensure your AAP inventory includes these recommended groups:
    - **Source Control URL**: `[your-git-repository-url]`
    - **Source Control Branch**: `main`
 
-### 2. Configure Execution Environment
+### 2. Configure Execution Environment (EE)
 Ensure your execution environment includes all required collections from `requirements.yml`:
 ```bash
 # Example EE build process
 ansible-builder build --tag my-patching-ee --file execution-environment.yml
 ```
 
-### 3. Create Job Template
+### 3. Create Job Template (with Survey)
 1. Navigate to **Templates** → **Add** → **Job Template**
 2. Configure the following:
    - **Name**: `AAP 2.5 OS Patching`
@@ -69,7 +75,7 @@ ansible-builder build --tag my-patching-ee --file execution-environment.yml
    - **Enable Privilege Escalation**: ✅
    - **Allow Simultaneous**: Configure based on infrastructure capacity
 
-### 4. Configure Survey
+### 4. Configure Survey (see patching_survey_new.json)
 1. In the Job Template, click **Survey** tab → **Add**
 2. Copy the survey configuration from `patching_survey.json`
 3. The survey includes:
@@ -79,9 +85,10 @@ ansible-builder build --tag my-patching-ee --file execution-environment.yml
    - Update categories
    - Email notifications
 
-## 🎯 Usage
 
-### Running via AAP Web Console
+## 🎯 Usage (AAP 2.5 Execution Environment)
+
+### Running via AAP Web Console (Recommended)
 1. Navigate to **Templates** and select the OS Patching job template
 2. Click **Launch** 
 3. Complete the survey form:
@@ -92,13 +99,14 @@ ansible-builder build --tag my-patching-ee --file execution-environment.yml
    - **Linux Package Exclusions**: Specify packages to skip (if any)
    - **Email Notification**: Optional completion notification
 
-### Execution Environment Flow
+### Execution Environment Flow (Best Practice)
 1. **Pre-Tasks**: Validates AAP environment and displays execution information
 2. **Role Execution**: Runs platform-specific patching (linux_patching or windows_patching)
 3. **Post-Tasks**: Handles reboots (if required and allowed)
 4. **Summary**: Generates comprehensive report and sends notifications
 
-## 📊 Monitoring and Reporting
+
+## 📊 Monitoring and Reporting (AAP Console)
 
 ### AAP Console Monitoring
 - **Real-time Output**: View live execution logs in AAP web console
@@ -112,9 +120,10 @@ ansible-builder build --tag my-patching-ee --file execution-environment.yml
 - Update counts and package information
 - Execution timing and summary statistics
 
-## 🔍 Variables Reference
 
-### Survey Variables
+## 🔍 Variables Reference (Survey & AAP Variables)
+
+### Survey Variables (see patching_survey_new.json)
 
 | Variable | Type | Description | Default |
 |----------|------|-------------|---------|
@@ -126,7 +135,7 @@ ansible-builder build --tag my-patching-ee --file execution-environment.yml
 | `linux_exclude_packages` | Text | Comma-separated packages to exclude | `""` |
 | `notification_email` | Text | Email for completion notifications | `""` |
 
-### Built-in AAP Variables
+### Built-in AAP Variables (Automatically Provided)
 
 These variables are automatically provided by AAP 2.5:
 - `tower_job_id` / `awx_job_id` - Unique job identifier
@@ -134,7 +143,8 @@ These variables are automatically provided by AAP 2.5:
 - `tower_user_name` / `awx_user_name` - User who launched the job
 - `ansible_runner_job_uuid` - Execution environment identifier
 
-## 🛠️ Troubleshooting
+
+## 🛠️ Troubleshooting (AAP 2.5)
 
 ### Common Issues and Solutions
 
@@ -163,7 +173,8 @@ Enable verbose logging by adding `-vvv` to the job template's extra variables:
 ansible_verbosity: 3
 ```
 
-## 📁 File Structure
+
+## 📁 File Structure (Best Practice)
 
 ```
 Auto-Patching/
@@ -179,7 +190,8 @@ Auto-Patching/
         └── tasks/main.yml    # Windows update tasks
 ```
 
-## 🔒 Security Considerations
+
+## 🔒 Security Considerations (AAP 2.5)
 
 - **No Hardcoded Credentials**: All authentication uses AAP credential management
 - **Privilege Escalation**: Managed through AAP credentials, not playbook
@@ -187,7 +199,8 @@ Auto-Patching/
 - **Audit Trail**: Complete execution logs maintained in AAP console
 - **Role-Based Access**: Leverage AAP's RBAC for user permissions
 
-## 📞 Support and Contributing
+
+## 📞 Support and Contributing (AAP 2.5)
 
 ### Getting Help
 1. Check AAP console job output for detailed error messages
@@ -195,12 +208,15 @@ Auto-Patching/
 3. Verify execution environment has all required collections
 4. Ensure AAP inventory and credentials are properly configured
 
-### Best Practices
+### Best Practices (AAP 2.5)
 - Test in development environment before production deployment
 - Use maintenance windows for production patching
 - Monitor job execution through AAP console
 - Keep execution environment collections updated
 - Review patch results before approving system reboots
+
+---
+
 
 ---
 
