@@ -1,0 +1,57 @@
+---
+# AAP 2.5 Static Inventory with Credential Variables
+# This inventory file uses AAP credential variables for secure authentication
+
+all:
+  children:
+    fortinet:
+      hosts:
+        # Production Fortinet devices
+        fw-prod-01:
+          ansible_host: "{{ fortinet_prod_fw01_ip | default('192.168.1.10') }}"
+          device_type: firewall
+          environment: prod
+          location: dc1
+          vdom: root
+          device_model: FortiGate-100F
+          
+        fw-prod-02:
+          ansible_host: "{{ fortinet_prod_fw02_ip | default('192.168.1.11') }}"
+          device_type: firewall
+          environment: prod
+          location: dc2
+          vdom: root
+          device_model: FortiGate-100F
+          
+        # Staging Fortinet devices
+        fw-staging-01:
+          ansible_host: "{{ fortinet_staging_fw01_ip | default('192.168.2.10') }}"
+          device_type: firewall
+          environment: staging
+          location: dc1
+          vdom: root
+          device_model: FortiGate-60F
+          
+      vars:
+        # Connection settings for all Fortinet devices
+        ansible_connection: httpapi
+        ansible_network_os: fortios
+        ansible_httpapi_use_ssl: true
+        ansible_httpapi_validate_certs: false
+        ansible_httpapi_port: 443
+        ansible_httpapi_timeout: 30
+        
+        # AAP Credential Integration
+        # These variables will be populated by AAP machine credentials
+        ansible_user: "{{ fortinet_username | default('admin') }}"
+        ansible_password: "{{ fortinet_password }}"
+        
+        # Default VDOM setting
+        vdom: root
+        
+        # Timeout settings
+        fortinet_connection_timeout: 30
+        fortinet_command_timeout: 60
+        
+        # Logging and debugging
+        ansible_verbosity: 1

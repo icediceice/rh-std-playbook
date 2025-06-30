@@ -1,0 +1,24 @@
+---
+# AAP 2.5 Execution Environment Build Instructions for Fortinet Management
+# This file contains the build steps and validation commands
+
+# To build this execution environment:
+# 1. Ensure you have ansible-builder installed: pip install ansible-builder
+# 2. Run: ansible-builder build --tag fortinet-ee:latest .
+# 3. Test: podman run -it fortinet-ee:latest /bin/bash
+
+# Build validation commands (run inside container):
+validation_commands:
+  - ansible-galaxy collection list
+  - ansible-doc fortinet.fortios.fortios_system_global
+  - python -c "import fortiosapi; print('FortiOS API available')"
+  - python -c "import requests; print('Requests available')"
+
+# Container registry information
+registry: quay.io/your-org/fortinet-ee
+tag: "{{ ansible_version }}-latest"
+
+# Build arguments
+build_args:
+  - ANSIBLE_GALAXY_CLI_COLLECTION_OPTS="-v --pre"
+  - PIP_INDEX_URL=https://pypi.org/simple/

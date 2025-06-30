@@ -1,0 +1,48 @@
+---
+# Production environment variables for Fortinet devices
+# These variables are applied to all devices in the 'production' group
+
+# Connection settings for production environment
+ansible_httpapi_timeout: 60  # Longer timeout for production
+ansible_httpapi_retries: 5   # More retries for stability
+
+# VDOM settings
+vdom: root
+default_vdom: root
+
+# Security settings for production
+ansible_httpapi_validate_certs: false  # Set to true if using valid certificates
+fortinet_api_timeout: 60
+fortinet_command_timeout: 120
+
+# Logging and audit settings
+enable_audit_logging: true
+log_level: info
+
+# Production-specific timeouts
+connection_timeout: 60
+read_timeout: 90
+command_timeout: 120
+
+# High availability settings
+ha_enabled: true
+ha_priority: 200
+
+# Backup and maintenance windows
+backup_enabled: true
+backup_schedule: "daily"
+maintenance_window: "02:00-04:00"
+
+# Monitoring settings
+snmp_enabled: true
+syslog_enabled: true
+monitoring_interval: 300
+
+# Change control requirements
+require_change_approval: true
+emergency_contact: "network-ops@company.com"
+
+# Environment identification
+environment_tag: "production"
+criticality: "high"
+business_hours: "24x7"

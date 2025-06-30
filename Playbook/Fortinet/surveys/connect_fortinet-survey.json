@@ -1,9 +1,46 @@
 {
-  "name": "Connect to Fortinet VA Survey",
-  "description": "Survey for customizing Fortinet VA connection variables (host list is managed separately).",
+  "name": "AAP 2.5 Fortinet Connection Survey",
+  "description": "Survey for connecting to Fortinet devices using AAP inventory and credentials. Credentials are automatically injected by AAP.",
   "questions": [
-    { "variable": "fortinet_user", "type": "text", "question": "Enter Fortinet username:", "default": "admin" },
-    { "variable": "fortinet_pass", "type": "password", "question": "Enter Fortinet password:", "default": "" },
-    { "variable": "vdom", "type": "text", "question": "Enter VDOM name:", "default": "root" }
+    {
+      "variable": "target_hosts",
+      "type": "multiplechoice",
+      "question": "Select target devices or groups:",
+      "choices": [
+        "fortinet",
+        "production",
+        "staging",
+        "development",
+        "firewalls",
+        "routers",
+        "datacenter_primary",
+        "datacenter_secondary",
+        "cloud_aws",
+        "cloud_azure"
+      ],
+      "default": "fortinet",
+      "required": true
+    },
+    {
+      "variable": "vdom",
+      "type": "text",
+      "question": "Enter VDOM name:",
+      "default": "root",
+      "required": true
+    },
+    {
+      "variable": "connection_timeout",
+      "type": "integer",
+      "question": "Connection timeout (seconds):",
+      "default": 30,
+      "min": 10,
+      "max": 300
+    },
+    {
+      "variable": "enable_debug",
+      "type": "boolean",
+      "question": "Enable debug logging?",
+      "default": false
+    }
   ]
 }

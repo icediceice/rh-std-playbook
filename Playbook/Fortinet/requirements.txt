@@ -1,0 +1,25 @@
+# Python dependencies for AAP 2.5 Fortinet Management
+# Required for execution environment and collections
+
+# Core requirements
+requests>=2.28.0
+urllib3>=1.26.0
+PyYAML>=6.0
+Jinja2>=3.1.0
+MarkupSafe>=2.1.0
+
+# Fortinet specific requirements
+fortiosapi>=1.0.0
+netaddr>=0.8.0
+
+# Email notification requirements
+smtplib2>=0.2.0
+
+# Networking and API requirements
+cryptography>=3.4.8
+paramiko>=2.11.0
+six>=1.16.0
+setuptools>=65.0.0
+
+# AAP 2.5 optimizations
+ansible-runner>=2.3.0

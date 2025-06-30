@@ -1,0 +1,36 @@
+---
+# Collection metadata for AAP 2.5 compatibility
+namespace: fortinet_management
+name: playbooks
+version: 1.0.0
+
+description: AAP 2.5 compatible Fortinet management playbooks with execution environment support
+
+authors:
+  - Ansible Automation Platform Team
+
+license:
+  - GPL-2.0-or-later
+
+tags:
+  - fortinet
+  - firewall
+  - networking
+  - aap
+  - execution_environment
+
+dependencies: {}
+
+repository: https://github.com/your-org/fortinet-ansible-playbooks
+homepage: https://github.com/your-org/fortinet-ansible-playbooks
+issues: https://github.com/your-org/fortinet-ansible-playbooks/issues
+
+build_ignore:
+  - "*.pyc"
+  - "*.retry"
+  - ".git"
+  - ".gitignore"
+  - "tests/"
+  - "docs/"
+  - ".DS_Store"
+  - "Thumbs.db"

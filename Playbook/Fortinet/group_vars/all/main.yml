@@ -1,0 +1,63 @@
+---
+# Global variables for all Fortinet devices
+# These variables apply to all devices unless overridden by more specific group_vars
+
+# AAP Credential Integration Variables
+# These will be automatically populated by AAP machine credentials
+# ansible_user: (injected by AAP machine credential)
+# ansible_password: (injected by AAP machine credential)
+
+# Default connection settings for all Fortinet devices
+ansible_connection: httpapi
+ansible_network_os: fortios
+ansible_httpapi_use_ssl: true
+ansible_httpapi_validate_certs: false
+ansible_httpapi_port: 443
+ansible_httpapi_timeout: 30
+
+# Default VDOM setting
+vdom: root
+
+# Default timeouts
+fortinet_connection_timeout: 30
+fortinet_command_timeout: 60
+fortinet_api_timeout: 30
+
+# Retry settings
+max_retries: 3
+retry_delay: 5
+
+# Logging settings
+ansible_verbosity: 1
+enable_debug: false
+
+# Default notification settings (can be overridden by vault variables)
+# These use AAP credential injection for SMTP settings
+smtp_host: "{{ vault_smtp_host | default('localhost') }}"
+smtp_port: "{{ vault_smtp_port | default(587) }}"
+smtp_user: "{{ vault_smtp_user | default('') }}"
+smtp_pass: "{{ vault_smtp_pass | default('') }}"
+admin_email: "{{ vault_admin_email | default('admin@company.com') }}"
+
+# Default backup settings
+backup_enabled: false
+backup_retention_days: 30
+
+# Default monitoring settings
+monitoring_enabled: true
+health_check_interval: 300
+
+# AAP integration variables
+aap_job_template: "{{ awx_job_template_name | default('Unknown') }}"
+aap_job_id: "{{ awx_job_id | default('N/A') }}"
+aap_user: "{{ awx_user_name | default('Unknown') }}"
+aap_inventory: "{{ awx_inventory_name | default('Unknown') }}"
+
+# Change tracking
+change_tracking: true
+change_reason: "{{ change_reason | default('Automated operation via AAP') }}"
+change_ticket: "{{ change_ticket | default('') }}"
+
+# Error handling
+fail_on_error: true
+continue_on_error: false

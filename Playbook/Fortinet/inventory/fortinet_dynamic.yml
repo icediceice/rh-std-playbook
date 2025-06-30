@@ -1,0 +1,40 @@
+---
+# AAP 2.5 Dynamic Inventory Configuration for Fortinet Management
+# This file enables inventory plugins and AAP credential integration
+
+plugin: constructed
+strict: false
+compose:
+  # Construct ansible_host from device_ip if available
+  ansible_host: device_ip | default(ansible_host)
+  # Set connection type for all Fortinet devices
+  ansible_connection: httpapi
+  ansible_network_os: fortios
+  ansible_httpapi_use_ssl: true
+  ansible_httpapi_validate_certs: false
+  ansible_httpapi_port: 443
+  
+groups:
+  # Group by device type
+  fortinet_firewalls: device_type == "firewall"
+  fortinet_routers: device_type == "router"
+  # Group by environment
+  production: environment == "prod"
+  staging: environment == "staging"
+  development: environment == "dev"
+  # Group by location
+  datacenter_primary: location == "dc1"
+  datacenter_secondary: location == "dc2"
+  cloud_aws: location == "aws"
+  cloud_azure: location == "azure"
+
+keyed_groups:
+  # Create groups based on VDOM
+  - key: vdom | default('root')
+    prefix: vdom
+  # Create groups based on firmware version
+  - key: firmware_version | default('unknown')
+    prefix: fw
+  # Create groups based on model
+  - key: device_model | default('unknown')
+    prefix: model

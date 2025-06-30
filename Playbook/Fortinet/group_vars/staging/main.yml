@@ -1,0 +1,48 @@
+---
+# Staging environment variables for Fortinet devices
+# These variables are applied to all devices in the 'staging' group
+
+# Connection settings for staging environment
+ansible_httpapi_timeout: 30
+ansible_httpapi_retries: 3
+
+# VDOM settings
+vdom: root
+default_vdom: root
+
+# Security settings for staging
+ansible_httpapi_validate_certs: false
+fortinet_api_timeout: 30
+fortinet_command_timeout: 60
+
+# Logging and audit settings
+enable_audit_logging: true
+log_level: debug  # More verbose logging for testing
+
+# Staging-specific timeouts
+connection_timeout: 30
+read_timeout: 45
+command_timeout: 60
+
+# High availability settings
+ha_enabled: false  # Usually disabled in staging
+ha_priority: 100
+
+# Backup and maintenance windows
+backup_enabled: true
+backup_schedule: "weekly"
+maintenance_window: "any"
+
+# Monitoring settings
+snmp_enabled: true
+syslog_enabled: true
+monitoring_interval: 600
+
+# Change control requirements
+require_change_approval: false  # More flexible for testing
+emergency_contact: "network-dev@company.com"
+
+# Environment identification
+environment_tag: "staging"
+criticality: "medium"
+business_hours: "business-hours"

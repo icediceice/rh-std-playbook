@@ -1,14 +1,14 @@
 ---
 # AAP 2.5 Optimized Fortinet Connection Playbook
-# Connect to Fortinet VA and authenticate with enhanced logging and error handling
+# Connect to Fortinet VA using AAP credentials and inventory plugins
 
-- name: Pre-flight checks and variable validation
+- name: Pre-flight checks and AAP credential validation
   hosts: localhost
   gather_facts: false
   connection: local
   become: false
   vars:
-    fortinet_hosts: "{{ fortinet_hosts | default('all') }}"
+    target_hosts: "{{ target_hosts | default('fortinet') }}"
     vdom: "{{ vdom | default('root') }}"
     
   tasks:
@@ -18,71 +18,115 @@
           - "=== AAP 2.5 Fortinet Connection Job Information ==="
           - "Job Template: {{ awx_job_template_name | default('Fortinet Connection') }}"
           - "Job ID: {{ awx_job_id | default('N/A') }}"
-          - "Target Hosts: {{ fortinet_hosts }}"
+          - "Target Group: {{ target_hosts }}"
           - "VDOM: {{ vdom }}"
           - "Started by: {{ awx_user_name | default(ansible_user_id) }}"
+          - "Inventory: {{ awx_inventory_name | default('Dynamic') }}"
+          - "Execution Environment: {{ awx_execution_environment | default('fortinet-ee') }}"
       tags: [always]
 
-    - name: Validate required variables
+    - name: Validate AAP credential injection
       assert:
         that:
-          - fortinet_hosts is defined
-          - fortinet_hosts != ""
-        fail_msg: "fortinet_hosts variable must be defined and not empty"
+          - target_hosts is defined
+          - target_hosts != ""
+        fail_msg: "target_hosts variable must be defined and not empty"
         success_msg: "Variable validation successful"
 
-- name: Connect to Fortinet VA and authenticate
-  hosts: "{{ fortinet_hosts }}"
+    - name: Display credential information (secure)
+      debug:
+        msg:
+          - "Using AAP Machine Credential for authentication"
+          - "Credential Type: {{ awx_credential_type | default('Machine') }}"
+          - "Username will be injected by AAP: {{ ansible_user is defined | ternary('✓', '✗') }}"
+          - "Password will be injected by AAP: {{ ansible_password is defined | ternary('✓', '✗') }}"
+      no_log: false  # Safe to log as we're not showing actual credentials
+
+- name: Connect to Fortinet devices using AAP credentials
+  hosts: "{{ target_hosts }}"
   gather_facts: no
   connection: httpapi
   vars:
-    ansible_httpapi_use_ssl: yes
-    ansible_httpapi_validate_certs: no
-    ansible_network_os: fortios
-    fortinet_username: "{{ fortinet_user | default(ansible_user) }}"
-    fortinet_password: "{{ fortinet_pass | default(ansible_password) }}"
+    # These variables are automatically injected by AAP machine credentials
+    # ansible_user: (provided by AAP credential)
+    # ansible_password: (provided by AAP credential)
+    
+    # Connection settings (can be overridden by inventory)
+    ansible_httpapi_use_ssl: "{{ ansible_httpapi_use_ssl | default(true) }}"
+    ansible_httpapi_validate_certs: "{{ ansible_httpapi_validate_certs | default(false) }}"
+    ansible_network_os: "{{ ansible_network_os | default('fortios') }}"
+    ansible_httpapi_port: "{{ ansible_httpapi_port | default(443) }}"
+    ansible_httpapi_timeout: "{{ ansible_httpapi_timeout | default(30) }}"
     vdom: "{{ vdom | default('root') }}"
-    connection_timeout: "{{ fortinet_connection_timeout | default(30) }}"
     
   tasks:
-    - name: Test connectivity to Fortinet device
+    - name: Display device inventory information
+      debug:
+        msg:
+          - "Device: {{ inventory_hostname }}"
+          - "Host IP: {{ ansible_host }}"
+          - "Device Type: {{ device_type | default('Unknown') }}"
+          - "Environment: {{ environment | default('Unknown') }}"
+          - "Location: {{ location | default('Unknown') }}"
+          - "Model: {{ device_model | default('Unknown') }}"
+      tags: [always]
+
+    - name: Test network connectivity to Fortinet device
       wait_for:
         host: "{{ ansible_host }}"
-        port: 443
+        port: "{{ ansible_httpapi_port | default(443) }}"
         timeout: 10
       delegate_to: localhost
       vars:
         ansible_connection: local
+      register: connectivity_test
 
-    - name: Authenticate to Fortinet VA
+    - name: Display connectivity status
+      debug:
+        msg: "✓ Network connectivity to {{ inventory_hostname }}:{{ ansible_httpapi_port | default(443) }} successful"
+      when: connectivity_test is succeeded
+
+    - name: Authenticate to Fortinet device using AAP credentials
       fortinet.fortios.fortios_monitor_fact:
         vdom: "{{ vdom }}"
         selector: 'system_status'
         access_token: "{{ fortinet_access_token | default(omit) }}"
-      register: login_result
+      register: auth_result
       retries: 3
       delay: 5
-      until: login_result is not failed
+      until: auth_result is not failed
+      no_log: false  # We can log this as it doesn't contain credentials
 
-    - name: Display authentication result
+    - name: Display authentication and device information
       debug:
         msg:
-          - "Authentication Status: {{ 'SUCCESS' if login_result is succeeded else 'FAILED' }}"
-          - "Device: {{ inventory_hostname }}"
+          - "✓ Authentication to {{ inventory_hostname }} successful"
+          - "Device Hostname: {{ auth_result.meta.results.hostname | default('Unknown') }}"
+          - "FortiOS Version: {{ auth_result.meta.results.version | default('Unknown') }}"
+          - "Serial Number: {{ auth_result.meta.results.serial | default('Unknown') }}"
           - "VDOM: {{ vdom }}"
-          - "Hostname: {{ login_result.meta.results.hostname | default('Unknown') }}"
-          - "Version: {{ login_result.meta.results.version | default('Unknown') }}"
-          - "Serial: {{ login_result.meta.results.serial | default('Unknown') }}"
+          - "HA Status: {{ auth_result.meta.results.ha_mode | default('Standalone') }}"
+      when: auth_result is succeeded
 
-    - name: Log connection activity
-      copy:
-        content: |
-          Fortinet Connection Activity - {{ ansible_date_time.iso8601 }}
-          =======================================================
-          
-          AAP Job ID: {{ awx_job_id | default('N/A') }}
-          Target Device: {{ inventory_hostname }} ({{ ansible_host }})
-          VDOM: {{ vdom }}
+    - name: Store device facts for inventory update
+      set_fact:
+        device_facts:
+          hostname: "{{ auth_result.meta.results.hostname | default('Unknown') }}"
+          version: "{{ auth_result.meta.results.version | default('Unknown') }}"
+          serial: "{{ auth_result.meta.results.serial | default('Unknown') }}"
+          ha_mode: "{{ auth_result.meta.results.ha_mode | default('Standalone') }}"
+          last_connected: "{{ ansible_date_time.iso8601 }}"
+      when: auth_result is succeeded
+
+    - name: Log successful connection for audit
+      lineinfile:
+        path: /tmp/fortinet_connections.log
+        line: "{{ ansible_date_time.iso8601 }} | AAP Job: {{ awx_job_id | default('N/A') }} | Device: {{ inventory_hostname }} | Status: SUCCESS | User: {{ awx_user_name | default('Unknown') }}"
+        create: yes
+      delegate_to: localhost
+      vars:
+        ansible_connection: local
+      when: auth_result is succeeded
           Authentication: {{ 'SUCCESS' if login_result is succeeded else 'FAILED' }}
           
           Device Information:
