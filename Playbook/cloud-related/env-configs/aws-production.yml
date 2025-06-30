@@ -1,0 +1,107 @@
+# AWS Production Environment Configuration
+# Use as Extra Variables in AAP Job Templates
+
+# Cloud Provider Settings
+cloud_provider: "aws"
+environment: "production"
+
+# AWS Specific Settings
+region: "us-east-1"
+availability_zones:
+  - "us-east-1a"
+  - "us-east-1b"
+  - "us-east-1c"
+
+# Network Configuration
+vpc_cidr: "10.0.0.0/16"
+public_subnet_cidrs:
+  - "10.0.1.0/24"
+  - "10.0.2.0/24"
+private_subnet_cidrs:
+  - "10.0.10.0/24"
+  - "10.0.11.0/24"
+
+# Default Instance Settings
+default_instance_type: "t3.large"
+default_key_name: "aws-prod-keypair"
+default_volume_size: 50
+default_volume_type: "gp3"
+
+# Security Settings
+enable_detailed_monitoring: true
+enable_termination_protection: true
+backup_retention_days: 30
+
+# Tagging Strategy
+default_tags:
+  Environment: "Production"
+  Project: "CloudAutomation"
+  Owner: "DevOps"
+  ManagedBy: "Ansible"
+  CostCenter: "IT-Operations"
+  BackupPolicy: "Daily"
+
+# Security Groups (to be created/referenced)
+security_groups:
+  web_servers:
+    name: "sg-prod-web"
+    description: "Production web servers"
+    rules:
+      - protocol: "tcp"
+        port: 80
+        cidr: "0.0.0.0/0"
+      - protocol: "tcp"
+        port: 443
+        cidr: "0.0.0.0/0"
+  
+  app_servers:
+    name: "sg-prod-app"
+    description: "Production application servers"
+    rules:
+      - protocol: "tcp"
+        port: 8080
+        source_sg: "sg-prod-web"
+  
+  database_servers:
+    name: "sg-prod-db"
+    description: "Production database servers"
+    rules:
+      - protocol: "tcp"
+        port: 3306
+        source_sg: "sg-prod-app"
+      - protocol: "tcp"
+        port: 5432
+        source_sg: "sg-prod-app"
+
+# Load Balancer Configuration
+load_balancer:
+  type: "application"
+  scheme: "internet-facing"
+  enable_deletion_protection: true
+  
+# Auto Scaling Configuration
+auto_scaling:
+  min_size: 2
+  max_size: 10
+  desired_capacity: 2
+  health_check_type: "ELB"
+  health_check_grace_period: 300
+
+# Monitoring and Alerting
+cloudwatch:
+  enable_detailed_monitoring: true
+  log_retention_days: 90
+  
+# Backup Configuration
+backup:
+  daily_backup: true
+  weekly_backup: true
+  monthly_backup: true
+  retention_daily: 7
+  retention_weekly: 4
+  retention_monthly: 12
+
+# Notification Settings
+notifications:
+  sns_topic: "arn:aws:sns:us-east-1:123456789012:prod-alerts"
+  email_alerts: true

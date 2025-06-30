@@ -1,0 +1,135 @@
+# Azure Staging Environment Configuration
+# Use as Extra Variables in AAP Job Templates
+
+# Cloud Provider Settings
+cloud_provider: "azure"
+environment: "staging"
+
+# Azure Specific Settings
+location: "eastus"
+resource_group: "rg-staging-automation"
+
+# Network Configuration
+vnet_cidr: "10.1.0.0/16"
+subnet_configs:
+  web_subnet:
+    name: "subnet-staging-web"
+    cidr: "10.1.1.0/24"
+  app_subnet:
+    name: "subnet-staging-app"
+    cidr: "10.1.2.0/24"
+  data_subnet:
+    name: "subnet-staging-data"
+    cidr: "10.1.10.0/24"
+
+# Default VM Settings
+default_vm_size: "Standard_B2ms"
+default_admin_username: "azureuser"
+default_os_disk_size: 64
+default_disk_type: "StandardSSD_LRS"
+
+# OS Image Configuration
+default_image:
+  publisher: "Canonical"
+  offer: "0001-com-ubuntu-server-focal"
+  sku: "20_04-lts-gen2"
+  version: "latest"
+
+# Security Settings
+enable_boot_diagnostics: true
+enable_automatic_updates: true
+
+# Tagging Strategy
+default_tags:
+  Environment: "Staging"
+  Project: "CloudAutomation"
+  Owner: "DevOps"
+  ManagedBy: "Ansible"
+  CostCenter: "IT-Development"
+  BackupPolicy: "Weekly"
+
+# Network Security Groups
+network_security_groups:
+  web_nsg:
+    name: "nsg-staging-web"
+    rules:
+      - name: "allow-http"
+        protocol: "Tcp"
+        source_port_range: "*"
+        destination_port_range: "80"
+        access: "Allow"
+        priority: 100
+      - name: "allow-https"
+        protocol: "Tcp"
+        source_port_range: "*"
+        destination_port_range: "443"
+        access: "Allow"
+        priority: 101
+      - name: "allow-ssh"
+        protocol: "Tcp"
+        source_port_range: "*"
+        destination_port_range: "22"
+        access: "Allow"
+        priority: 102
+  
+  app_nsg:
+    name: "nsg-staging-app"
+    rules:
+      - name: "allow-app-port"
+        protocol: "Tcp"
+        source_port_range: "*"
+        destination_port_range: "8080"
+        access: "Allow"
+        priority: 100
+      - name: "allow-ssh"
+        protocol: "Tcp"
+        source_port_range: "*"
+        destination_port_range: "22"
+        access: "Allow"
+        priority: 101
+
+# Load Balancer Configuration
+load_balancer:
+  type: "basic"
+  sku: "Standard"
+  frontend_ip_configuration: "public"
+
+# Availability Configuration
+availability_set:
+  name: "avset-staging"
+  platform_fault_domain_count: 2
+  platform_update_domain_count: 2
+
+# Storage Configuration
+storage_account:
+  name: "staging{{ resource_group | regex_replace('-', '') }}storage"
+  sku: "Standard_LRS"
+  kind: "StorageV2"
+
+# Backup Configuration
+backup:
+  policy_name: "staging-weekly-backup"
+  schedule: "weekly"
+  retention_daily: 7
+  retention_weekly: 4
+
+# Monitoring Settings
+monitoring:
+  enable_diagnostics: true
+  log_analytics_workspace: "law-staging-monitoring"
+  retention_days: 30
+
+# Auto Scaling (VM Scale Sets)
+auto_scaling:
+  min_capacity: 1
+  max_capacity: 5
+  default_capacity: 2
+  scale_out_cpu_threshold: 75
+  scale_in_cpu_threshold: 25
+
+# Development Tools Integration
+dev_tools:
+  enable_docker: true
+  enable_git: true
+  enable_nodejs: true
+  enable_python: true

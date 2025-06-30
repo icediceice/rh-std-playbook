@@ -1,0 +1,129 @@
+---
+# Deploy Single Environment Task
+# Called by multi_cloud_deployment_workflow.yml
+
+- name: "Start deployment for {{ env_name }} ({{ env_config.cloud_provider }})"
+  ansible.builtin.debug:
+    msg:
+      - "Deploying environment: {{ env_name }}"
+      - "Cloud Provider: {{ env_config.cloud_provider }}"
+      - "Environment Type: {{ env_config.environment }}"
+      - "Deployment Order: {{ deployment_order | default('N/A') }}"
+
+- name: Set deployment facts
+  ansible.builtin.set_fact:
+    deployment_start_time: "{{ ansible_date_time.iso8601 }}"
+    current_env_name: "{{ env_name }}"
+    current_cloud_provider: "{{ env_config.cloud_provider }}"
+
+- name: Validate cloud provider credentials
+  ansible.builtin.include_tasks: "validate_{{ env_config.cloud_provider }}_credentials.yml"
+  tags: [validation, credentials]
+
+- name: Deploy cloud-specific resources
+  block:
+    - name: Deploy AWS resources
+      when: env_config.cloud_provider == "aws"
+      block:
+        - name: Setup AWS VPC and networking
+          amazon.aws.ec2_vpc_info:
+            region: "{{ env_config.region }}"
+          register: aws_vpc_check
+
+        - name: Create AWS VPC if not exists
+          amazon.aws.ec2_vpc:
+            name: "{{ env_config.environment }}-vpc"
+            cidr_block: "{{ env_config.vpc_cidr }}"
+            region: "{{ env_config.region }}"
+            tags: "{{ env_config.default_tags }}"
+            state: present
+          when: aws_vpc_check.vpcs | length == 0
+
+        - name: Provision AWS servers
+          ansible.builtin.include_tasks: provision_aws_servers.yml
+          when: provision_servers | default(true)
+
+    - name: Deploy Azure resources
+      when: env_config.cloud_provider == "azure"
+      block:
+        - name: Create Azure Resource Group
+          azure.azcollection.azure_rm_resourcegroup:
+            name: "{{ env_config.resource_group }}"
+            location: "{{ env_config.location }}"
+            tags: "{{ env_config.default_tags }}"
+            state: present
+
+        - name: Create Azure Virtual Network
+          azure.azcollection.azure_rm_virtualnetwork:
+            resource_group: "{{ env_config.resource_group }}"
+            name: "{{ env_config.environment }}-vnet"
+            address_prefixes: ["{{ env_config.vnet_cidr }}"]
+            location: "{{ env_config.location }}"
+            tags: "{{ env_config.default_tags }}"
+            state: present
+
+        - name: Provision Azure VMs
+          ansible.builtin.include_tasks: provision_azure_vms.yml
+          when: provision_servers | default(true)
+
+    - name: Deploy GCP resources
+      when: env_config.cloud_provider == "gcp"
+      block:
+        - name: Create GCP VPC Network
+          google.cloud.gcp_compute_network:
+            name: "{{ env_config.network_name }}"
+            project: "{{ env_config.project_id }}"
+            routing_config:
+              routing_mode: "REGIONAL"
+            auto_create_subnetworks: false
+            state: present
+
+        - name: Create GCP Subnet
+          google.cloud.gcp_compute_subnetwork:
+            name: "{{ env_config.subnet_name }}"
+            project: "{{ env_config.project_id }}"
+            region: "{{ env_config.region }}"
+            network:
+              name: "{{ env_config.network_name }}"
+            ip_cidr_range: "{{ env_config.subnet_cidr }}"
+            state: present
+
+        - name: Provision GCP instances
+          ansible.builtin.include_tasks: provision_gcp_instances.yml
+          when: provision_servers | default(true)
+
+  rescue:
+    - name: Handle deployment failure
+      ansible.builtin.debug:
+        msg: "Deployment failed for {{ env_name }} on {{ env_config.cloud_provider }}"
+
+    - name: Log deployment error
+      ansible.builtin.lineinfile:
+        path: "/tmp/deployment_errors.log"
+        line: "{{ ansible_date_time.iso8601 }} - FAILED: {{ env_name }} ({{ env_config.cloud_provider }}) - {{ ansible_failed_result.msg | default('Unknown error') }}"
+        create: true
+      delegate_to: localhost
+
+    - name: Fail deployment
+      ansible.builtin.fail:
+        msg: "Deployment failed for {{ env_name }}"
+      when: fail_on_error | default(true)
+
+- name: Log successful deployment
+  ansible.builtin.lineinfile:
+    path: "/tmp/deployment_success.log"
+    line: "{{ ansible_date_time.iso8601 }} - SUCCESS: {{ env_name }} ({{ env_config.cloud_provider }}) - Deployment completed"
+    create: true
+  delegate_to: localhost
+
+- name: Calculate deployment duration
+  ansible.builtin.set_fact:
+    deployment_end_time: "{{ ansible_date_time.iso8601 }}"
+    deployment_duration: "{{ (ansible_date_time.epoch | int) - (deployment_start_time | to_datetime('%Y-%m-%dT%H:%M:%SZ') | int) }}"
+
+- name: "Complete deployment for {{ env_name }}"
+  ansible.builtin.debug:
+    msg:
+      - "Environment {{ env_name }} deployed successfully"
+      - "Duration: {{ deployment_duration }} seconds"
+      - "Cloud Provider: {{ env_config.cloud_provider }}"

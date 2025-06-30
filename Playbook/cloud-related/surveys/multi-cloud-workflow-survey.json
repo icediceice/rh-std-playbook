@@ -1,0 +1,127 @@
+[
+  {
+    "variable": "deployment_strategy",
+    "question_name": "Deployment Strategy",
+    "type": "multiplechoice",
+    "choices": ["sequential", "parallel", "blue_green"],
+    "default": "sequential",
+    "required": true,
+    "help_text": "Sequential: Deploy one environment at a time. Parallel: Deploy all environments simultaneously. Blue-Green: Deploy staging first, then production."
+  },
+  {
+    "variable": "environments_to_deploy",
+    "question_name": "Environments to Deploy",
+    "type": "multiselect",
+    "choices": ["aws_prod", "azure_staging", "gcp_dev"],
+    "default": ["aws_prod", "azure_staging", "gcp_dev"],
+    "required": true,
+    "help_text": "Select which cloud environments to deploy (can select multiple)"
+  },
+  {
+    "variable": "provision_servers",
+    "question_name": "Provision Servers",
+    "type": "multiplechoice",
+    "choices": ["yes", "no"],
+    "default": "yes",
+    "required": false,
+    "help_text": "Whether to provision virtual machines/instances in addition to networking"
+  },
+  {
+    "variable": "enable_cross_cloud_networking",
+    "question_name": "Enable Cross-Cloud Networking",
+    "type": "multiplechoice",
+    "choices": ["yes", "no"],
+    "default": "no",
+    "required": false,
+    "help_text": "Setup VPN connections between different cloud environments"
+  },
+  {
+    "variable": "enable_monitoring",
+    "question_name": "Enable Monitoring",
+    "type": "multiplechoice",
+    "choices": ["yes", "no"],
+    "default": "yes",
+    "required": false,
+    "help_text": "Configure monitoring and alerting for deployed resources"
+  },
+  {
+    "variable": "enable_centralized_logging",
+    "question_name": "Enable Centralized Logging",
+    "type": "multiplechoice",
+    "choices": ["yes", "no"],
+    "default": "yes",
+    "required": false,
+    "when": "enable_monitoring == 'yes'",
+    "help_text": "Setup centralized log aggregation across all cloud environments"
+  },
+  {
+    "variable": "fail_on_error",
+    "question_name": "Fail on Error",
+    "type": "multiplechoice",
+    "choices": ["yes", "no"],
+    "default": "yes",
+    "required": false,
+    "help_text": "Stop deployment workflow if any environment fails to deploy"
+  },
+  {
+    "variable": "fail_on_validation_error",
+    "question_name": "Fail on Validation Error",
+    "type": "multiplechoice",
+    "choices": ["yes", "no"],
+    "default": "yes",
+    "required": false,
+    "help_text": "Stop deployment if post-deployment validation fails"
+  },
+  {
+    "variable": "notification_email",
+    "question_name": "Send Email Notification",
+    "type": "multiplechoice",
+    "choices": ["yes", "no"],
+    "default": "no",
+    "required": false,
+    "help_text": "Send email notification when deployment completes"
+  },
+  {
+    "variable": "notification_recipients",
+    "question_name": "Notification Recipients",
+    "type": "textarea",
+    "default": "devops@company.com",
+    "required": false,
+    "when": "notification_email == 'yes'",
+    "help_text": "Email addresses to notify (one per line)"
+  },
+  {
+    "variable": "smtp_server",
+    "question_name": "SMTP Server",
+    "type": "text",
+    "default": "smtp.company.com",
+    "required": false,
+    "when": "notification_email == 'yes'",
+    "help_text": "SMTP server for sending notifications"
+  },
+  {
+    "variable": "gcp_project_id",
+    "question_name": "GCP Project ID (if deploying GCP)",
+    "type": "text",
+    "required": false,
+    "when": "'gcp_dev' in environments_to_deploy",
+    "help_text": "GCP project ID for GCP deployments"
+  },
+  {
+    "variable": "deployment_tags",
+    "question_name": "Deployment Tags (JSON)",
+    "type": "textarea",
+    "default": "{\"DeployedBy\": \"AAP\", \"Workflow\": \"MultiCloud\"}",
+    "required": false,
+    "help_text": "Additional tags to apply to all resources in JSON format"
+  },
+  {
+    "variable": "dry_run",
+    "question_name": "Dry Run Mode",
+    "type": "multiplechoice",
+    "choices": ["yes", "no"],
+    "default": "no",
+    "required": false,
+    "help_text": "Run in dry-run mode to validate configuration without creating resources"
+  }
+]

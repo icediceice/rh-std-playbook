@@ -53,24 +53,40 @@ Your execution environment must include:
 ```yaml
 cloud-related/
   playbooks/
-    cloud-auth.yml                 # Cloud authentication validation
-    provision-server.yml           # Server/VM provisioning  
-    provision-pvc.yml              # Storage/volume provisioning
-    setup-cloud-env.yml            # Network and security setup
-    query-unused-resources.yml     # Resource auditing
-    workflow_cloud_setup.yml       # Complete environment workflow
+    cloud-auth.yml                        # Cloud authentication validation
+    provision-server.yml                  # Server/VM provisioning  
+    provision-pvc.yml                     # Storage/volume provisioning
+    setup-cloud-env.yml                   # Network and security setup
+    query-unused-resources.yml            # Resource auditing
+    workflow_cloud_setup.yml              # Complete environment workflow
+    multi_cloud_deployment_workflow.yml   # Advanced multi-cloud orchestration
   surveys/
+    # Generic surveys
     cloud-auth-survey.json
     provision-server-survey.json
     provision-pvc-survey.json
     setup-cloud-env-survey.json
     query-unused-resources-survey.json
     workflow-cloud-setup-survey.json
-  execution-environment.yml        # EE configuration
-  requirements.yml                 # Ansible collections
-  requirements.txt                 # Python packages
-  bindep.txt                      # System dependencies
-  ansible.cfg                     # Ansible configuration
+    multi-cloud-workflow-survey.json
+    # Environment-specific surveys
+    aws-production-server-survey.json
+    azure-staging-server-survey.json
+    gcp-development-server-survey.json
+  env-configs/
+    aws-production.yml                    # AWS production configuration
+    azure-staging.yml                     # Azure staging configuration
+    gcp-development.yml                   # GCP development configuration
+  tasks/
+    deploy_single_environment.yml         # Single environment deployment
+    validate_deployment.yml               # Post-deployment validation
+    validate_*_credentials.yml            # Cloud-specific credential validation
+  execution-environment.yml              # EE configuration
+  requirements.yml                       # Ansible collections
+  requirements.txt                       # Python packages
+  bindep.txt                            # System dependencies
+  ansible.cfg                           # Ansible configuration
+  SURVEY-PERSISTENCE-GUIDE.md           # Detailed redeployment guide
 ```
 
 ## Getting Started
@@ -223,9 +239,41 @@ Each playbook includes an optimized survey with:
 #### From AAP Web Console:
 1. Navigate to **Templates**
 2. Click the **Launch** button for desired job template
-3. Fill out the survey form
+3. Fill out the survey form (first time)
 4. Click **Launch** to start execution
 5. Monitor progress in real-time via **Jobs** view
+
+#### Survey Persistence & Redeployment:
+AAP 2.5 supports reusing previous survey answers for consistent deployments:
+
+**Save Survey Configuration:**
+1. After successful job completion, go to **Jobs** → **Completed Job**
+2. Click **Relaunch** to see saved survey values
+3. Or use **Launch with Survey** to modify and save new values
+
+**Multi-Cloud Deployment Strategy:**
+```yaml
+# Example: Separate configurations for different environments
+AWS Production:
+  - Job Template: "Cloud-AWS-Production"
+  - Survey Config: Saved with AWS-specific values
+  - Relaunch: Uses saved AWS config without survey
+
+Azure Staging:
+  - Job Template: "Cloud-Azure-Staging" 
+  - Survey Config: Saved with Azure-specific values
+  - Relaunch: Uses saved Azure config without survey
+
+GCP Development:
+  - Job Template: "Cloud-GCP-Development"
+  - Survey Config: Saved with GCP-specific values
+  - Relaunch: Uses saved GCP config without survey
+```
+
+**Automated Redeployment:**
+- Use **Job Template Extra Variables** to override survey defaults
+- Create **Workflow Templates** with pre-configured values
+- Use **AAP API** for programmatic deployment with saved configs
 
 #### Job Output Features:
 - Real-time log streaming
@@ -262,18 +310,111 @@ Each playbook includes an optimized survey with:
 - **Credential Rotation**: Regularly rotate cloud credentials through AAP credential management
 - **Least Privilege**: Assign only necessary cloud permissions to service accounts/users
 
-### 6. Workflow Templates
+### 6. Multi-Cloud Deployment Strategy
 
-For complex multi-step operations, create workflow templates:
+#### Setup for Multiple Cloud Environments
+
+**Option 1: Separate Job Templates per Cloud**
+Create dedicated job templates for each cloud provider:
 
 ```yaml
-# Example Workflow: Complete Cloud Setup
-Nodes:
-  1. Setup Authentication (cloud-auth.yml)
-  2. Setup Environment (setup-cloud-env.yml) 
-  3. Provision Servers (provision-server.yml) - Conditional
-  4. Provision Storage (provision-pvc.yml) - Conditional  
-  5. Audit Resources (query-unused-resources.yml)
+Job Templates:
+  "AWS-Production-Server":
+    Playbook: "playbooks/provision-server.yml"
+    Credentials: [AWS-Prod-Cred]
+    Extra Variables:
+      cloud_provider: "aws"
+      environment: "production"
+      region: "us-east-1"
+  
+  "Azure-Staging-Server":
+    Playbook: "playbooks/provision-server.yml" 
+    Credentials: [Azure-Staging-Cred]
+    Extra Variables:
+      cloud_provider: "azure"
+      environment: "staging"
+      region: "eastus"
+  
+  "GCP-Development-Server":
+    Playbook: "playbooks/provision-server.yml"
+    Credentials: [GCP-Dev-Cred]
+    Extra Variables:
+      cloud_provider: "gcp"
+      environment: "development"
+      region: "us-central1"
+```
+
+**Option 2: Single Template with Dynamic Configuration**
+Use one job template with environment-specific extra variables:
+
+```yaml
+Job Template: "Multi-Cloud-Server-Provisioning"
+Survey Variables:
+  - cloud_provider (aws/azure/gcp)
+  - environment (dev/staging/prod)
+  - deployment_config (predefined config name)
+
+Extra Variables (Environment Specific):
+  aws_prod:
+    region: "us-east-1"
+    instance_type: "t3.large"
+    vpc_cidr: "10.0.0.0/16"
+  
+  azure_staging:
+    region: "eastus"
+    instance_type: "Standard_B2s"
+    vpc_cidr: "10.1.0.0/16"
+  
+  gcp_dev:
+    region: "us-central1"
+    instance_type: "n1-standard-1"
+    vpc_cidr: "10.2.0.0/16"
+```
+
+#### Survey Configuration Persistence
+
+**Method 1: AAP Survey Persistence (Built-in)**
+1. Run job template with survey
+2. AAP automatically saves last survey values
+3. Use **Relaunch** button to deploy with same config
+4. Modify only necessary fields for different environments
+
+**Method 2: Extra Variables Override**
+1. Set default values in Job Template Extra Variables
+2. Survey values override defaults when provided
+3. Skip survey for automated deployments using saved configs
+
+#### Deployment Workflows
+
+**Scenario 1: Initial Multi-Cloud Setup**
+```yaml
+Workflow: "Multi-Cloud-Initial-Deployment"
+1. AWS Environment Setup
+2. Azure Environment Setup  
+3. GCP Environment Setup
+4. Cross-Cloud Network Peering (Optional)
+5. Multi-Cloud Monitoring Setup
+```
+
+**Scenario 2: Environment-Specific Deployment**
+```yaml
+Workflow: "Environment-Specific-Deployment"
+1. Survey Input: Select cloud_provider + environment
+2. Validate Credentials for Selected Cloud
+3. Setup Environment (if needed)
+4. Provision Resources
+5. Configure Monitoring
+6. Send Notification
+```
+
+**Scenario 3: Disaster Recovery Deployment**
+```yaml
+Workflow: "DR-Failover-Deployment"
+1. Detect Primary Cloud Failure
+2. Launch DR Environment on Secondary Cloud
+3. Restore Data from Backups
+4. Update DNS/Load Balancer
+5. Notify Operations Team
 ```
 
 ### 7. Monitoring and Troubleshooting

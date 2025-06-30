@@ -1,0 +1,150 @@
+[
+  {
+    "variable": "server_name",
+    "question_name": "Server Name",
+    "type": "text",
+    "required": true,
+    "help_text": "GCP development server name (will be prefixed with 'gcp-dev-')"
+  },
+  {
+    "variable": "machine_type",
+    "question_name": "Machine Type",
+    "type": "multiplechoice",
+    "choices": ["e2-micro", "e2-small", "e2-medium", "n1-standard-1", "n1-standard-2", "n2-standard-2"],
+    "default": "e2-medium",
+    "required": true,
+    "help_text": "GCP machine type for development workloads"
+  },
+  {
+    "variable": "zone",
+    "question_name": "GCP Zone",
+    "type": "multiplechoice",
+    "choices": ["us-central1-a", "us-central1-b", "us-west1-a", "europe-west1-b", "asia-southeast1-a"],
+    "default": "us-central1-a",
+    "required": true,
+    "help_text": "GCP zone for deployment"
+  },
+  {
+    "variable": "project_id",
+    "question_name": "GCP Project ID",
+    "type": "text",
+    "required": true,
+    "help_text": "GCP project ID for deployment"
+  },
+  {
+    "variable": "network",
+    "question_name": "Network Name",
+    "type": "text",
+    "default": "default",
+    "required": false,
+    "help_text": "VPC network name (default: 'default')"
+  },
+  {
+    "variable": "subnet",
+    "question_name": "Subnet Name",
+    "type": "text",
+    "default": "default",
+    "required": false,
+    "help_text": "Subnet name within the VPC"
+  },
+  {
+    "variable": "image_family",
+    "question_name": "Image Family",
+    "type": "multiplechoice",
+    "choices": ["ubuntu-2004-lts", "ubuntu-2204-lts", "debian-11", "centos-7", "rhel-8"],
+    "default": "ubuntu-2004-lts",
+    "required": true,
+    "help_text": "GCP image family for the instance"
+  },
+  {
+    "variable": "image_project",
+    "question_name": "Image Project",
+    "type": "multiplechoice",
+    "choices": ["ubuntu-os-cloud", "debian-cloud", "centos-cloud", "rhel-cloud"],
+    "default": "ubuntu-os-cloud",
+    "required": true,
+    "help_text": "GCP image project"
+  },
+  {
+    "variable": "boot_disk_size",
+    "question_name": "Boot Disk Size (GB)",
+    "type": "integer",
+    "default": 20,
+    "min": 10,
+    "max": 100,
+    "required": true,
+    "help_text": "Size of the boot disk in GB"
+  },
+  {
+    "variable": "boot_disk_type",
+    "question_name": "Boot Disk Type",
+    "type": "multiplechoice",
+    "choices": ["pd-standard", "pd-ssd", "pd-balanced"],
+    "default": "pd-balanced",
+    "required": true,
+    "help_text": "GCP persistent disk type"
+  },
+  {
+    "variable": "enable_preemptible",
+    "question_name": "Enable Preemptible Instance",
+    "type": "multiplechoice",
+    "choices": ["yes", "no"],
+    "default": "yes",
+    "required": false,
+    "help_text": "Use preemptible instance (lower cost, may be terminated)"
+  },
+  {
+    "variable": "ssh_keys",
+    "question_name": "SSH Keys",
+    "type": "textarea",
+    "required": false,
+    "help_text": "SSH public keys in format 'username:ssh-key' (one per line)"
+  },
+  {
+    "variable": "network_tags",
+    "question_name": "Network Tags",
+    "type": "text",
+    "default": "dev-server,http-server",
+    "required": false,
+    "help_text": "Comma-separated network tags for firewall rules"
+  },
+  {
+    "variable": "service_account_email",
+    "question_name": "Service Account Email",
+    "type": "text",
+    "required": false,
+    "help_text": "Service account email for the instance (optional)"
+  },
+  {
+    "variable": "scopes",
+    "question_name": "OAuth Scopes",
+    "type": "textarea",
+    "default": "https://www.googleapis.com/auth/compute,https://www.googleapis.com/auth/logging.write",
+    "required": false,
+    "help_text": "OAuth scopes for the instance (one per line)"
+  },
+  {
+    "variable": "enable_ip_forwarding",
+    "question_name": "Enable IP Forwarding",
+    "type": "multiplechoice",
+    "choices": ["yes", "no"],
+    "default": "no",
+    "required": false,
+    "help_text": "Allow instance to forward IP packets"
+  },
+  {
+    "variable": "labels",
+    "question_name": "Labels (JSON)",
+    "type": "textarea",
+    "default": "{\"environment\": \"development\", \"project\": \"cloud-automation\", \"owner\": \"devops\"}",
+    "required": false,
+    "help_text": "Instance labels in JSON format"
+  },
+  {
+    "variable": "startup_script",
+    "question_name": "Startup Script",
+    "type": "textarea",
+    "required": false,
+    "help_text": "Custom startup script to run on instance creation"
+  }
+]

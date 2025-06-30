@@ -1,0 +1,143 @@
+[
+  {
+    "variable": "server_name",
+    "question_name": "Server Name",
+    "type": "text",
+    "required": true,
+    "help_text": "Azure staging server name (will be prefixed with 'az-staging-')"
+  },
+  {
+    "variable": "vm_size",
+    "question_name": "VM Size",
+    "type": "multiplechoice",
+    "choices": ["Standard_B2s", "Standard_B2ms", "Standard_D2s_v3", "Standard_D4s_v3", "Standard_F2s_v2"],
+    "default": "Standard_B2ms",
+    "required": true,
+    "help_text": "Azure VM size for staging workloads"
+  },
+  {
+    "variable": "location",
+    "question_name": "Azure Region",
+    "type": "multiplechoice",
+    "choices": ["eastus", "westus2", "westeurope", "southeastasia"],
+    "default": "eastus",
+    "required": true,
+    "help_text": "Azure region for deployment"
+  },
+  {
+    "variable": "resource_group",
+    "question_name": "Resource Group",
+    "type": "text",
+    "default": "rg-staging-automation",
+    "required": true,
+    "help_text": "Azure resource group name"
+  },
+  {
+    "variable": "virtual_network",
+    "question_name": "Virtual Network Name",
+    "type": "text",
+    "default": "vnet-staging",
+    "required": false,
+    "help_text": "Existing VNet name (leave empty to create new)"
+  },
+  {
+    "variable": "subnet_name",
+    "question_name": "Subnet Name",
+    "type": "text",
+    "default": "subnet-staging-vms",
+    "required": false,
+    "help_text": "Subnet name for VM deployment"
+  },
+  {
+    "variable": "admin_username",
+    "question_name": "Admin Username",
+    "type": "text",
+    "default": "azureuser",
+    "required": true,
+    "help_text": "Administrator username for the VM"
+  },
+  {
+    "variable": "ssh_public_key",
+    "question_name": "SSH Public Key",
+    "type": "textarea",
+    "required": false,
+    "help_text": "SSH public key for authentication (if not provided, password auth will be used)"
+  },
+  {
+    "variable": "os_disk_size",
+    "question_name": "OS Disk Size (GB)",
+    "type": "integer",
+    "default": 64,
+    "min": 32,
+    "max": 1024,
+    "required": true,
+    "help_text": "Size of the OS disk in GB"
+  },
+  {
+    "variable": "disk_type",
+    "question_name": "Disk Type",
+    "type": "multiplechoice",
+    "choices": ["Standard_LRS", "StandardSSD_LRS", "Premium_LRS"],
+    "default": "StandardSSD_LRS",
+    "required": true,
+    "help_text": "Azure managed disk type"
+  },
+  {
+    "variable": "image_offer",
+    "question_name": "OS Image Offer",
+    "type": "multiplechoice",
+    "choices": ["UbuntuServer", "0001-com-ubuntu-server-focal", "RHEL", "WindowsServer"],
+    "default": "0001-com-ubuntu-server-focal",
+    "required": true,
+    "help_text": "Azure marketplace image offer"
+  },
+  {
+    "variable": "image_sku",
+    "question_name": "OS Image SKU",
+    "type": "text",
+    "default": "20_04-lts-gen2",
+    "required": true,
+    "help_text": "Azure marketplace image SKU"
+  },
+  {
+    "variable": "network_security_group",
+    "question_name": "Network Security Group",
+    "type": "text",
+    "default": "nsg-staging-vms",
+    "required": false,
+    "help_text": "Network security group name (leave empty to create default)"
+  },
+  {
+    "variable": "enable_boot_diagnostics",
+    "question_name": "Enable Boot Diagnostics",
+    "type": "multiplechoice",
+    "choices": ["yes", "no"],
+    "default": "yes",
+    "required": false,
+    "help_text": "Enable Azure boot diagnostics"
+  },
+  {
+    "variable": "backup_policy",
+    "question_name": "Backup Policy",
+    "type": "multiplechoice",
+    "choices": ["daily", "weekly", "none"],
+    "default": "daily",
+    "required": false,
+    "help_text": "Azure backup policy for the VM"
+  },
+  {
+    "variable": "environment_tags",
+    "question_name": "Additional Tags (JSON)",
+    "type": "textarea",
+    "default": "{\"Environment\": \"Staging\", \"Project\": \"CloudAutomation\", \"Owner\": \"DevOps\"}",
+    "required": false,
+    "help_text": "Additional tags in JSON format"
+  },
+  {
+    "variable": "availability_set",
+    "question_name": "Availability Set",
+    "type": "text",
+    "required": false,
+    "help_text": "Availability set name (optional for staging)"
+  }
+]

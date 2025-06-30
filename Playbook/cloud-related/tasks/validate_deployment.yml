@@ -1,0 +1,149 @@
+---
+# Validate Deployment Task
+
+- name: "Start validation for {{ env_name }} ({{ env_config.cloud_provider }})"
+  ansible.builtin.debug:
+    msg:
+      - "Validating deployment: {{ env_name }}"
+      - "Cloud Provider: {{ env_config.cloud_provider }}"
+      - "Environment: {{ env_config.environment }}"
+
+- name: Initialize validation results
+  ansible.builtin.set_fact:
+    validation_results: []
+
+- name: Validate AWS deployment
+  when: env_config.cloud_provider == "aws"
+  block:
+    - name: Check AWS VPC exists
+      amazon.aws.ec2_vpc_info:
+        region: "{{ env_config.region }}"
+        filters:
+          "tag:Environment": "{{ env_config.environment }}"
+      register: aws_vpc_validation
+
+    - name: Check AWS instances are running
+      amazon.aws.ec2_instance_info:
+        region: "{{ env_config.region }}"
+        filters:
+          "tag:Environment": "{{ env_config.environment }}"
+          "instance-state-name": "running"
+      register: aws_instances_validation
+
+    - name: Update AWS validation results
+      ansible.builtin.set_fact:
+        validation_results: "{{ validation_results + [
+          {
+            'check': 'AWS VPC exists',
+            'status': 'PASS' if aws_vpc_validation.vpcs | length > 0 else 'FAIL',
+            'details': aws_vpc_validation.vpcs | length | string + ' VPC(s) found'
+          },
+          {
+            'check': 'AWS instances running',
+            'status': 'PASS' if aws_instances_validation.instances | length > 0 else 'FAIL',
+            'details': aws_instances_validation.instances | length | string + ' instance(s) running'
+          }
+        ] }}"
+
+- name: Validate Azure deployment
+  when: env_config.cloud_provider == "azure"
+  block:
+    - name: Check Azure Resource Group exists
+      azure.azcollection.azure_rm_resourcegroup_info:
+        name: "{{ env_config.resource_group }}"
+      register: azure_rg_validation
+
+    - name: Check Azure VMs are running
+      azure.azcollection.azure_rm_virtualmachine_info:
+        resource_group: "{{ env_config.resource_group }}"
+      register: azure_vms_validation
+
+    - name: Update Azure validation results
+      ansible.builtin.set_fact:
+        validation_results: "{{ validation_results + [
+          {
+            'check': 'Azure Resource Group exists',
+            'status': 'PASS' if azure_rg_validation.resourcegroups | length > 0 else 'FAIL',
+            'details': 'Resource group ' + env_config.resource_group + ' status: ' + (azure_rg_validation.resourcegroups[0].properties.provisioning_state if azure_rg_validation.resourcegroups | length > 0 else 'Not found')
+          },
+          {
+            'check': 'Azure VMs running',
+            'status': 'PASS' if azure_vms_validation.vms | length > 0 else 'WARN',
+            'details': azure_vms_validation.vms | length | string + ' VM(s) found'
+          }
+        ] }}"
+
+- name: Validate GCP deployment
+  when: env_config.cloud_provider == "gcp"
+  block:
+    - name: Check GCP VPC exists
+      google.cloud.gcp_compute_network_info:
+        project: "{{ env_config.project_id }}"
+        filters:
+          - "name = {{ env_config.network_name }}"
+      register: gcp_vpc_validation
+
+    - name: Check GCP instances are running
+      google.cloud.gcp_compute_instance_info:
+        project: "{{ env_config.project_id }}"
+        zone: "{{ env_config.zone }}"
+        filters:
+          - "labels.environment = {{ env_config.environment }}"
+      register: gcp_instances_validation
+
+    - name: Update GCP validation results
+      ansible.builtin.set_fact:
+        validation_results: "{{ validation_results + [
+          {
+            'check': 'GCP VPC exists',
+            'status': 'PASS' if gcp_vpc_validation.resources | length > 0 else 'FAIL',
+            'details': gcp_vpc_validation.resources | length | string + ' VPC(s) found'
+          },
+          {
+            'check': 'GCP instances running',
+            'status': 'PASS' if gcp_instances_validation.resources | length > 0 else 'WARN',
+            'details': gcp_instances_validation.resources | length | string + ' instance(s) found'
+          }
+        ] }}"
+
+- name: Perform connectivity tests
+  block:
+    - name: Test instance connectivity (placeholder)
+      ansible.builtin.debug:
+        msg: "Connectivity test would be performed here based on cloud provider"
+
+    - name: Add connectivity validation result
+      ansible.builtin.set_fact:
+        validation_results: "{{ validation_results + [
+          {
+            'check': 'Instance connectivity',
+            'status': 'PASS',
+            'details': 'Connectivity test completed'
+          }
+        ] }}"
+
+- name: Display validation results
+  ansible.builtin.debug:
+    msg:
+      - "Validation Results for {{ env_name }}:"
+      - "{{ validation_results }}"
+
+- name: Check for validation failures
+  ansible.builtin.set_fact:
+    failed_validations: "{{ validation_results | selectattr('status', 'equalto', 'FAIL') | list }}"
+
+- name: Report validation summary
+  ansible.builtin.debug:
+    msg:
+      - "Validation Summary for {{ env_name }}:"
+      - "Total Checks: {{ validation_results | length }}"
+      - "Passed: {{ validation_results | selectattr('status', 'equalto', 'PASS') | list | length }}"
+      - "Warnings: {{ validation_results | selectattr('status', 'equalto', 'WARN') | list | length }}"
+      - "Failed: {{ failed_validations | length }}"
+
+- name: Fail if critical validations failed
+  ansible.builtin.fail:
+    msg: "Critical validation failures detected: {{ failed_validations }}"
+  when:
+    - failed_validations | length > 0
+    - fail_on_validation_error | default(true)

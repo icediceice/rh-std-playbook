@@ -1,0 +1,145 @@
+# GCP Development Environment Configuration
+# Use as Extra Variables in AAP Job Templates
+
+# Cloud Provider Settings
+cloud_provider: "gcp"
+environment: "development"
+
+# GCP Specific Settings
+zone: "us-central1-a"
+region: "us-central1"
+project_id: "{{ gcp_project_id | default('your-dev-project-id') }}"
+
+# Network Configuration
+network_name: "dev-vpc"
+subnet_name: "dev-subnet"
+subnet_cidr: "10.2.0.0/24"
+
+# Default Instance Settings
+default_machine_type: "e2-medium"
+default_boot_disk_size: 20
+default_boot_disk_type: "pd-balanced"
+enable_preemptible: true  # Cost optimization for development
+
+# Image Configuration
+default_image:
+  family: "ubuntu-2004-lts"
+  project: "ubuntu-os-cloud"
+
+# Security Settings
+default_network_tags:
+  - "dev-server"
+  - "http-server"
+  - "ssh-access"
+
+# Tagging Strategy (Labels in GCP)
+default_labels:
+  environment: "development"
+  project: "cloud-automation"
+  owner: "devops"
+  managed_by: "ansible"
+  cost_center: "it-development"
+  backup_policy: "none"
+
+# Firewall Rules
+firewall_rules:
+  allow_ssh:
+    name: "dev-allow-ssh"
+    direction: "INGRESS"
+    action: "allow"
+    targets: ["ssh-access"]
+    sources: ["0.0.0.0/0"]
+    ports: ["22"]
+    protocol: "tcp"
+  
+  allow_http:
+    name: "dev-allow-http"
+    direction: "INGRESS"
+    action: "allow"
+    targets: ["http-server"]
+    sources: ["0.0.0.0/0"]
+    ports: ["80", "8080"]
+    protocol: "tcp"
+  
+  allow_internal:
+    name: "dev-allow-internal"
+    direction: "INGRESS"
+    action: "allow"
+    targets: ["dev-server"]
+    sources: ["10.2.0.0/24"]
+    ports: []  # All ports
+    protocol: "all"
+
+# Service Account Configuration
+service_account:
+  name: "dev-compute-sa"
+  display_name: "Development Compute Service Account"
+  scopes:
+    - "https://www.googleapis.com/auth/compute"
+    - "https://www.googleapis.com/auth/logging.write"
+    - "https://www.googleapis.com/auth/monitoring.write"
+    - "https://www.googleapis.com/auth/servicecontrol"
+
+# Load Balancer Configuration (for multi-instance setups)
+load_balancer:
+  type: "network"
+  ip_protocol: "TCP"
+  load_balancing_scheme: "EXTERNAL"
+
+# Instance Groups (for auto-scaling)
+instance_group:
+  min_replicas: 0  # Can scale to zero for cost savings
+  max_replicas: 3
+  target_cpu_utilization: 0.6
+  cool_down_period: 60
+
+# Storage Configuration
+persistent_disks:
+  data_disk:
+    size: 10
+    type: "pd-standard"
+    auto_delete: true
+
+# Development Environment Specific Settings
+dev_environment:
+  enable_docker: true
+  enable_kubernetes: false
+  enable_cloud_sql_proxy: true
+  enable_stackdriver: true
+  
+# Snapshot Configuration
+snapshots:
+  schedule: "weekly"
+  retention_days: 14
+  auto_create: false  # Manual snapshots for dev
+
+# Cost Optimization Settings
+cost_optimization:
+  use_preemptible: true
+  auto_shutdown_hours: 8  # Shutdown after 8 hours of inactivity
+  weekend_shutdown: true
+  
+# Monitoring and Logging
+monitoring:
+  enable_ops_agent: true
+  log_retention_days: 7
+  metric_retention_days: 14
+  
+# Startup Scripts
+startup_scripts:
+  update_packages: |
+    #!/bin/bash
+    apt-get update
+    apt-get upgrade -y
+  
+  install_dev_tools: |
+    #!/bin/bash
+    apt-get install -y git curl wget vim
+    curl -fsSL https://get.docker.com -o get-docker.sh
+    sh get-docker.sh
+    usermod -aG docker $USER
+
+# SSH Key Management
+ssh_keys:
+  # SSH keys will be provided via survey or credential store
+  # Format: "username:ssh-rsa AAAAB3... user@domain.com"

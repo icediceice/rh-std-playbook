@@ -1,0 +1,182 @@
+---
+# Multi-Cloud Environment Deployment Workflow
+# This playbook orchestrates deployment across multiple cloud providers
+# Use with AAP 2.5 Workflow Templates for complex multi-cloud scenarios
+
+- name: Multi-Cloud Environment Deployment Workflow
+  hosts: all
+  gather_facts: false
+  vars:
+    # Default deployment configuration
+    deployment_strategy: "{{ deployment_strategy | default('sequential') }}"  # sequential, parallel, or blue_green
+    environments_to_deploy: "{{ environments_to_deploy | default(['aws_prod', 'azure_staging', 'gcp_dev']) }}"
+    
+    # Environment mapping
+    environment_configs:
+      aws_prod:
+        cloud_provider: "aws"
+        environment: "production"
+        config_file: "aws-production.yml"
+        priority: 1
+      azure_staging:
+        cloud_provider: "azure"
+        environment: "staging"
+        config_file: "azure-staging.yml"
+        priority: 2
+      gcp_dev:
+        cloud_provider: "gcp"
+        environment: "development"
+        config_file: "gcp-development.yml"
+        priority: 3
+
+  tasks:
+    - name: Validate deployment configuration
+      ansible.builtin.assert:
+        that:
+          - deployment_strategy in ['sequential', 'parallel', 'blue_green']
+          - environments_to_deploy | length > 0
+          - environments_to_deploy | intersect(environment_configs.keys()) | length == (environments_to_deploy | length)
+        fail_msg: "Invalid deployment configuration provided"
+
+    - name: Display deployment plan
+      ansible.builtin.debug:
+        msg:
+          - "Deployment Strategy: {{ deployment_strategy }}"
+          - "Environments to Deploy: {{ environments_to_deploy }}"
+          - "Total Environments: {{ environments_to_deploy | length }}"
+
+    - name: Load environment configurations
+      ansible.builtin.include_vars:
+        file: "env-configs/{{ environment_configs[item].config_file }}"
+        name: "{{ item }}_config"
+      loop: "{{ environments_to_deploy }}"
+      tags: [config]
+
+    - name: Sequential deployment block
+      when: deployment_strategy == "sequential"
+      block:
+        - name: Deploy environments sequentially
+          ansible.builtin.include_tasks: tasks/deploy_single_environment.yml
+          vars:
+            env_name: "{{ item }}"
+            env_config: "{{ vars[item + '_config'] }}"
+            deployment_order: "{{ ansible_loop.index }}"
+          loop: "{{ environments_to_deploy | sort(attribute=environment_configs[item].priority) }}"
+          loop_control:
+            extended: true
+
+    - name: Parallel deployment block
+      when: deployment_strategy == "parallel"
+      block:
+        - name: Deploy environments in parallel
+          ansible.builtin.include_tasks: tasks/deploy_single_environment.yml
+          vars:
+            env_name: "{{ item }}"
+            env_config: "{{ vars[item + '_config'] }}"
+            deployment_order: 0
+          loop: "{{ environments_to_deploy }}"
+          async: 3600  # 1 hour timeout
+          poll: 0
+          register: parallel_deployments
+
+        - name: Wait for parallel deployments to complete
+          ansible.builtin.async_status:
+            jid: "{{ item.ansible_job_id }}"
+          loop: "{{ parallel_deployments.results }}"
+          register: parallel_results
+          until: parallel_results.finished
+          retries: 120
+          delay: 30
+
+    - name: Blue-Green deployment block
+      when: deployment_strategy == "blue_green"
+      block:
+        - name: Deploy to staging environments first (Green)
+          ansible.builtin.include_tasks: tasks/deploy_single_environment.yml
+          vars:
+            env_name: "{{ item }}"
+            env_config: "{{ vars[item + '_config'] }}"
+            deployment_phase: "green"
+          loop: "{{ environments_to_deploy }}"
+          when: environment_configs[item].environment in ['staging', 'development']
+
+        - name: Validate green deployments
+          ansible.builtin.include_tasks: tasks/validate_deployment.yml
+          vars:
+            env_name: "{{ item }}"
+            env_config: "{{ vars[item + '_config'] }}"
+          loop: "{{ environments_to_deploy }}"
+          when: environment_configs[item].environment in ['staging', 'development']
+
+        - name: Promote to production environments (Blue)
+          ansible.builtin.include_tasks: tasks/deploy_single_environment.yml
+          vars:
+            env_name: "{{ item }}"
+            env_config: "{{ vars[item + '_config'] }}"
+            deployment_phase: "blue"
+          loop: "{{ environments_to_deploy }}"
+          when: environment_configs[item].environment == 'production'
+
+    - name: Post-deployment validation
+      ansible.builtin.include_tasks: tasks/validate_deployment.yml
+      vars:
+        env_name: "{{ item }}"
+        env_config: "{{ vars[item + '_config'] }}"
+      loop: "{{ environments_to_deploy }}"
+      tags: [validation]
+
+    - name: Configure cross-cloud networking
+      when: enable_cross_cloud_networking | default(false)
+      block:
+        - name: Setup VPN connections between clouds
+          ansible.builtin.include_tasks: tasks/setup_cross_cloud_vpn.yml
+          vars:
+            source_env: "{{ item.0 }}"
+            target_env: "{{ item.1 }}"
+          loop: "{{ environments_to_deploy | product(environments_to_deploy) | list }}"
+          when: item.0 != item.1
+
+    - name: Setup monitoring and alerting
+      when: enable_monitoring | default(true)
+      block:
+        - name: Configure cloud-specific monitoring
+          ansible.builtin.include_tasks: tasks/setup_monitoring.yml
+          vars:
+            env_name: "{{ item }}"
+            env_config: "{{ vars[item + '_config'] }}"
+          loop: "{{ environments_to_deploy }}"
+
+        - name: Setup centralized logging
+          ansible.builtin.include_tasks: tasks/setup_centralized_logging.yml
+          when: enable_centralized_logging | default(true)
+
+    - name: Generate deployment report
+      ansible.builtin.template:
+        src: deployment_report.j2
+        dest: "/tmp/multi_cloud_deployment_{{ ansible_date_time.epoch }}.html"
+      vars:
+        deployment_summary:
+          strategy: "{{ deployment_strategy }}"
+          environments: "{{ environments_to_deploy }}"
+          start_time: "{{ ansible_date_time.iso8601 }}"
+          total_environments: "{{ environments_to_deploy | length }}"
+      tags: [reporting]
+
+    - name: Send deployment notification
+      when: notification_email | default(false)
+      block:
+        - name: Send email notification
+          community.general.mail:
+            to: "{{ notification_recipients | default(['devops@company.com']) }}"
+            subject: "Multi-Cloud Deployment Completed - {{ deployment_strategy | title }}"
+            body: |
+              Multi-cloud deployment has completed successfully.
+              
+              Strategy: {{ deployment_strategy | title }}
+              Environments Deployed: {{ environments_to_deploy | join(', ') }}
+              Total Environments: {{ environments_to_deploy | length }}
+              Deployment Time: {{ ansible_date_time.iso8601 }}
+              
+              Please check the deployment report for detailed information.
+            smtp: "{{ smtp_server | default('localhost') }}"
+          delegate_to: localhost

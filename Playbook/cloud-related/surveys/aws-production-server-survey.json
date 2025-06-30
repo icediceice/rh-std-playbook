@@ -1,0 +1,141 @@
+[
+  {
+    "variable": "server_name",
+    "question_name": "Server Name",
+    "type": "text",
+    "required": true,
+    "help_text": "AWS production server name (will be prefixed with 'aws-prod-')"
+  },
+  {
+    "variable": "instance_type",
+    "question_name": "Instance Type",
+    "type": "multiplechoice",
+    "choices": ["t3.medium", "t3.large", "t3.xlarge", "m5.large", "m5.xlarge", "c5.large"],
+    "default": "t3.large",
+    "required": true,
+    "help_text": "AWS EC2 instance type for production workloads"
+  },
+  {
+    "variable": "region",
+    "question_name": "AWS Region",
+    "type": "multiplechoice",
+    "choices": ["us-east-1", "us-west-2", "eu-west-1", "ap-southeast-1"],
+    "default": "us-east-1",
+    "required": true,
+    "help_text": "AWS region for deployment"
+  },
+  {
+    "variable": "availability_zone",
+    "question_name": "Availability Zone",
+    "type": "text",
+    "required": false,
+    "help_text": "Specific AZ (optional, will auto-select if not provided)"
+  },
+  {
+    "variable": "vpc_id",
+    "question_name": "VPC ID",
+    "type": "text",
+    "required": false,
+    "help_text": "Existing VPC ID (leave empty to use default production VPC)"
+  },
+  {
+    "variable": "subnet_id",
+    "question_name": "Subnet ID",
+    "type": "text",
+    "required": false,
+    "help_text": "Specific subnet ID (leave empty for automatic selection)"
+  },
+  {
+    "variable": "key_name",
+    "question_name": "EC2 Key Pair Name",
+    "type": "text",
+    "default": "aws-prod-keypair",
+    "required": true,
+    "help_text": "EC2 key pair for SSH access"
+  },
+  {
+    "variable": "security_groups",
+    "question_name": "Security Groups",
+    "type": "textarea",
+    "default": "sg-prod-web,sg-prod-ssh",
+    "required": false,
+    "help_text": "Comma-separated list of security group names or IDs"
+  },
+  {
+    "variable": "volume_size",
+    "question_name": "Root Volume Size (GB)",
+    "type": "integer",
+    "default": 50,
+    "min": 20,
+    "max": 500,
+    "required": true,
+    "help_text": "Size of the root EBS volume in GB"
+  },
+  {
+    "variable": "volume_type",
+    "question_name": "Volume Type",
+    "type": "multiplechoice",
+    "choices": ["gp3", "gp2", "io1", "io2"],
+    "default": "gp3",
+    "required": true,
+    "help_text": "EBS volume type"
+  },
+  {
+    "variable": "enable_monitoring",
+    "question_name": "Enable Detailed Monitoring",
+    "type": "multiplechoice",
+    "choices": ["yes", "no"],
+    "default": "yes",
+    "required": false,
+    "help_text": "Enable CloudWatch detailed monitoring"
+  },
+  {
+    "variable": "backup_retention",
+    "question_name": "Backup Retention (days)",
+    "type": "integer",
+    "default": 30,
+    "min": 1,
+    "max": 365,
+    "required": false,
+    "help_text": "Number of days to retain automated backups"
+  },
+  {
+    "variable": "environment_tags",
+    "question_name": "Additional Tags (JSON)",
+    "type": "textarea",
+    "default": "{\"Environment\": \"Production\", \"Project\": \"CloudAutomation\", \"Owner\": \"DevOps\"}",
+    "required": false,
+    "help_text": "Additional tags in JSON format"
+  },
+  {
+    "variable": "auto_scaling",
+    "question_name": "Enable Auto Scaling",
+    "type": "multiplechoice",
+    "choices": ["yes", "no"],
+    "default": "no",
+    "required": false,
+    "help_text": "Create auto scaling group for this instance"
+  },
+  {
+    "variable": "min_instances",
+    "question_name": "Minimum Instances (if auto scaling)",
+    "type": "integer",
+    "default": 1,
+    "min": 1,
+    "max": 10,
+    "required": false,
+    "when": "auto_scaling == 'yes'",
+    "help_text": "Minimum number of instances in auto scaling group"
+  },
+  {
+    "variable": "max_instances",
+    "question_name": "Maximum Instances (if auto scaling)",
+    "type": "integer",
+    "default": 3,
+    "min": 1,
+    "max": 20,
+    "required": false,
+    "when": "auto_scaling == 'yes'",
+    "help_text": "Maximum number of instances in auto scaling group"
+  }
+]
