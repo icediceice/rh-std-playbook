@@ -122,6 +122,7 @@
           
     - name: Display patching summary
       ansible.builtin.debug:
+      ansible.builtin.debug:
         msg:
           - "=== AAP 2.5 Execution Environment Patching Summary ==="
           - "Job ID: {{ patching_summary.job_id }}"
