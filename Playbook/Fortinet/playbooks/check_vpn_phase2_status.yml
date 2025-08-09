@@ -39,20 +39,7 @@
           {%- else -%}
             {{- false -}}
           {%- endif -%}
-        vpn_details: >-
-          {% set phase2_list = (vpn_phase2.meta.results | default([]) | selectattr('name', 'search', vpn_name) | list) %}
-          {% if phase2_list %}
-            {% set phase2 = phase2_list[0] %}
-            {
-              "name": "{{ phase2.name }}",
-              "remote_gateway": "{{ phase2.rgwy | default('Unknown') }}",
-              "connection_count": {{ phase2.connection_count | default(0) }},
-              "incoming_bytes": {{ phase2.incoming_bytes | default(0) }},
-              "outgoing_bytes": {{ phase2.outgoing_bytes | default(0) }}
-            }
-          {% else %}
-            {}
-          {% endif %}
+        vpn_details: "{{ vpn_phase2.meta.results | selectattr('name', 'search', vpn_name) | list | first | default({}) }}"
 
     - name: Show VPN Phase 2 status results
       debug:
@@ -65,7 +52,7 @@
           - "VPN Is Up: {{ vpn_is_up }}"
           - "Workflow Result: {{ 'SUCCESS' if vpn_is_up else 'FAILED' }}"
           - ""
-          - "VPN Details: {{ vpn_details | from_json if vpn_found else 'N/A' }}"
+          - "VPN Details: {{ vpn_details }}"
 
     - name: Fail task if VPN Phase 2 is down (for workflow control)
       fail:
