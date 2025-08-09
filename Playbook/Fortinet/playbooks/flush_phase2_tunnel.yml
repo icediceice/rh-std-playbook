@@ -24,36 +24,24 @@
         phase2_names: >-
           {{ vpn_phase2.meta.results | selectattr('name', 'search', vpn_name) | map(attribute='name') | list | unique }}
 
-    - name: Get Phase 2 details for proper reset
-      set_fact:
-        phase2_details: []
+    - name: Show Phase 2 tunnel details for reset
+      debug:
+        msg:
+          - "Phase 1 Name: {{ vpn_name }}"
+          - "Phase 2 Names: {{ phase2_names }}"
+          - "Phase 2 Details from proxyid:"
+          - "{{ vpn_phase2.meta.results | selectattr('name', 'search', vpn_name) | map(attribute='proxyid') | flatten | list }}"
 
-    - name: Build Phase 2 details list
-      set_fact:
-        phase2_details: >-
-          {{ phase2_details + [{'p1name': phase1.name, 'p2name': proxy.p2name, 'p2serial': proxy.p2serial}] }}
-      loop: >-
-        {% set result = [] %}
-        {% for phase1 in vpn_phase2.meta.results | selectattr('name', 'search', vpn_name) %}
-          {% for proxy in phase1.proxyid | default([]) %}
-            {% set _ = result.append({'phase1': phase1, 'proxy': proxy}) %}
-          {% endfor %}
-        {% endfor %}
-        {{ result }}
-      vars:
-        phase1: "{{ item.phase1 }}"
-        proxy: "{{ item.proxy }}"
-
-    - name: Bring down Phase 2 tunnels first
+    - name: Bring down Phase 2 tunnels using proxyid details
       fortinet.fortios.fortios_monitor:
         vdom: "{{ vdom }}"
         access_token: "{{ ansible_password | default(fortinet_api_token) }}"
         selector: 'tunnel_down.vpn.ipsec'
         params:
-          p1name: "{{ item.p1name }}"
+          p1name: "{{ vpn_name }}"
           p2name: "{{ item.p2name }}"
           p2serial: "{{ item.p2serial }}"
-      loop: "{{ phase2_details }}"
+      loop: "{{ vpn_phase2.meta.results | selectattr('name', 'search', vpn_name) | map(attribute='proxyid') | flatten | list }}"
       register: down_result
       ignore_errors: yes
 
@@ -67,10 +55,10 @@
         access_token: "{{ ansible_password | default(fortinet_api_token) }}"
         selector: 'tunnel_up.vpn.ipsec'
         params:
-          p1name: "{{ item.p1name }}"
+          p1name: "{{ vpn_name }}"
           p2name: "{{ item.p2name }}"
           p2serial: "{{ item.p2serial }}"
-      loop: "{{ phase2_details }}"
+      loop: "{{ vpn_phase2.meta.results | selectattr('name', 'search', vpn_name) | map(attribute='proxyid') | flatten | list }}"
       register: up_result
       ignore_errors: yes
 
@@ -89,7 +77,7 @@
       set_fact:
         tunnels_found: "{{ phase2_names | length > 0 }}"
         tunnels_count: "{{ phase2_names | length }}"
-        flush_successful: "{{ (down_result.results | selectattr('failed', 'equalto', false) | list | length == phase2_details | length) and (up_result.results | selectattr('failed', 'equalto', false) | list | length == phase2_details | length) }}"
+        flush_successful: "{{ (down_result.results | selectattr('failed', 'equalto', false) | list | length == down_result.results | length) and (up_result.results | selectattr('failed', 'equalto', false) | list | length == up_result.results | length) }}"
         vpn_status_after: >-
           {%- set phase2_list = (vpn_status_after_reset.meta.results | default([]) | selectattr('name', 'search', vpn_name) | list) -%}
           {%- if phase2_list -%}
