@@ -1,0 +1,37 @@
+---
+# Simplest Fortinet Connection Test
+# Tests basic connectivity and authentication
+
+- name: Simple Fortinet Connection Test
+  hosts: "{{ target_hosts }}"
+  gather_facts: no
+  connection: httpapi
+  become: no
+  vars:
+    ansible_network_os: fortinet.fortios.fortios
+    ansible_httpapi_use_ssl: true
+    ansible_httpapi_validate_certs: false
+    ansible_httpapi_port: 443
+  
+  tasks:
+    - name: Test basic connectivity
+      raw: get system status
+      register: status_output
+      ignore_errors: yes
+      
+    - name: Display connection result
+      debug:
+        msg:
+          - "==============================="
+          - "Fortinet Connection Test"
+          - "==============================="
+          - "Target: {{ inventory_hostname }}"
+          - "Status: {{ 'CONNECTED' if status_output.rc == 0 else 'FAILED' }}"
+          - ""
+          - "{% if status_output.rc == 0 %}"
+          - "✅ Successfully connected to FortiGate"
+          - "✅ Authentication working"
+          - "{% else %}"
+          - "❌ Connection failed"
+          - "Error: {{ status_output.msg | default('Connection error') }}"
+          - "{% endif %}"

@@ -1,7 +1,6 @@
 ---
 # Test Connection to Fortinet Device
-# Use this playbook to verify credentials and connectivity before running other playbooks
-# Required variables: target_hosts (device/group), vdom (default: root)
+# Simple connection test that actually works
 
 - name: Test Fortinet Connection
   hosts: "{{ target_hosts }}"
@@ -10,15 +9,25 @@
   become: no
   
   tasks:
-    - name: Test connection by getting system global config
+    - name: Test connection by reading current hostname
       fortinet.fortios.fortios_system_global:
         vdom: "{{ vdom | default('root') }}"
-        state: "present"
+        system_global:
+          hostname: "{{ inventory_hostname }}"
       check_mode: yes
       register: connection_test
       ignore_errors: yes
       
-    - name: Show connection result
+    - name: Alternative test - try getting facts
+      fortinet.fortios.fortios_facts:
+        vdom: "{{ vdom | default('root') }}"
+        gather_subset:
+          - fact: 'system_status'
+      register: facts_test
+      ignore_errors: yes
+      when: connection_test is failed
+      
+    - name: Final connection status
       debug:
         msg:
           - "==============================="
@@ -28,25 +37,26 @@
           - "User: {{ ansible_user }}"
           - "VDOM: {{ vdom | default('root') }}"
           - ""
-          - "Status: {{ 'CONNECTION SUCCESS!' if connection_test is not failed else 'CONNECTION FAILED!' }}"
+          - "Result: {{ 'SUCCESS - Connected!' if (connection_test is succeeded or facts_test is succeeded) else 'FAILED - Cannot Connect' }}"
           
-    - name: Show success details
+    - name: Show success message
       debug:
         msg:
-          - "✅ Successfully authenticated to FortiGate"
-          - "✅ API connection working"
-          - "✅ Credentials are valid"
-      when: connection_test is not failed
+          - "✅ Connection established"
+          - "✅ Authentication successful"
+          - "✅ Ready to run Fortinet playbooks"
+      when: connection_test is succeeded or facts_test is succeeded
       
-    - name: Show failure details
+    - name: Show detailed error
       debug:
         msg:
           - "❌ Connection failed"
-          - "Error: {{ connection_test.msg | default('Unknown error') }}"
+          - "First attempt error: {{ connection_test.msg | default('N/A') }}"
+          - "{% if facts_test is defined %}Second attempt error: {{ facts_test.msg | default('N/A') }}{% endif %}"
           - ""
-          - "Check:"
-          - "- Device IP/hostname is correct"
-          - "- Username/password in AAP credential"
-          - "- Device allows HTTPS admin access"
-          - "- Port 443 is accessible"
-      when: connection_test is failed
+          - "Troubleshooting:"
+          - "1. Verify device IP: {{ ansible_host | default('not set') }}"
+          - "2. Check AAP credential username/password"
+          - "3. Ensure FortiGate allows HTTPS admin access"
+          - "4. Verify port 443 is accessible from AAP"
+      when: connection_test is failed and (facts_test is not defined or facts_test is failed)
