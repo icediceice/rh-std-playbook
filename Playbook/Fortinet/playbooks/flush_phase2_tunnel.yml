@@ -24,15 +24,32 @@
         phase2_names: >-
           {{ vpn_phase2.meta.results | selectattr('name', 'search', vpn_name) | map(attribute='name') | list | unique }}
 
-    - name: Flush VPN Phase 2 tunnel sessions only (keeps Phase 1 and config)
+    - name: Bring down Phase 2 tunnels first
       fortinet.fortios.fortios_monitor:
         vdom: "{{ vdom }}"
         access_token: "{{ ansible_password | default(fortinet_api_token) }}"
-        selector: 'vpn-ipsec_flush-tunnel'
+        selector: 'tunnel_down.vpn.ipsec'
         params:
-          tunnel: "{{ item }}"
+          phase2: "{{ item }}"
+          phase1: "{{ vpn_name }}"
       loop: "{{ phase2_names }}"
-      register: flush_result
+      register: down_result
+      ignore_errors: yes
+
+    - name: Wait before bringing tunnels back up
+      pause:
+        seconds: 3
+
+    - name: Bring up Phase 2 tunnels to re-establish
+      fortinet.fortios.fortios_monitor:
+        vdom: "{{ vdom }}"
+        access_token: "{{ ansible_password | default(fortinet_api_token) }}"
+        selector: 'tunnel_up.vpn.ipsec'
+        params:
+          phase2: "{{ item }}"
+          phase1: "{{ vpn_name }}"
+      loop: "{{ phase2_names }}"
+      register: up_result
       ignore_errors: yes
 
     - name: Wait for tunnel reset to complete
@@ -50,7 +67,7 @@
       set_fact:
         tunnels_found: "{{ phase2_names | length > 0 }}"
         tunnels_count: "{{ phase2_names | length }}"
-        flush_successful: "{{ flush_result.results | selectattr('failed', 'equalto', false) | list | length == phase2_names | length }}"
+        flush_successful: "{{ (down_result.results | selectattr('failed', 'equalto', false) | list | length == phase2_names | length) and (up_result.results | selectattr('failed', 'equalto', false) | list | length == phase2_names | length) }}"
         vpn_status_after: >-
           {%- set phase2_list = (vpn_status_after_reset.meta.results | default([]) | selectattr('name', 'search', vpn_name) | list) -%}
           {%- if phase2_list -%}
