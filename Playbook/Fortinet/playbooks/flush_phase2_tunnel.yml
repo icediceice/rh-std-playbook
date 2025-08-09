@@ -1,5 +1,5 @@
 ---
-- name: Flush VPN Phase 2 Tunnel
+- name: Reset VPN Phase 2 Tunnel Sessions
   hosts: "{{ target_hosts }}"
   gather_facts: no
   connection: httpapi
@@ -24,39 +24,64 @@
         phase2_names: >-
           {{ vpn_phase2.meta.results | selectattr('name', 'search', vpn_name) | map(attribute='name') | list | unique }}
 
-    - name: Flush all Phase 2 tunnels for the VPN
-      fortinet.fortios.fortios_vpn_ipsec_phase2_interface:
-        state: "absent"
+    - name: Flush VPN Phase 2 tunnel sessions only (keeps Phase 1 and config)
+      fortinet.fortios.fortios_monitor:
         vdom: "{{ vdom }}"
         access_token: "{{ ansible_password | default(fortinet_api_token) }}"
-        name: "{{ item }}"
+        selector: 'vpn-ipsec_flush-tunnel'
+        params:
+          tunnel: "{{ item }}"
       loop: "{{ phase2_names }}"
       register: flush_result
+      ignore_errors: yes
 
-    - name: Set flush operation facts for workflow
+    - name: Wait for tunnel reset to complete
+      pause:
+        seconds: 5
+
+    - name: Check tunnel status after reset
+      fortinet.fortios.fortios_monitor_fact:
+        vdom: "{{ vdom }}"
+        access_token: "{{ ansible_password | default(fortinet_api_token) }}"
+        selector: 'vpn_ipsec'
+      register: vpn_status_after_reset
+
+    - name: Set reset operation facts for workflow
       set_fact:
         tunnels_found: "{{ phase2_names | length > 0 }}"
         tunnels_count: "{{ phase2_names | length }}"
         flush_successful: "{{ flush_result.results | selectattr('failed', 'equalto', false) | list | length == phase2_names | length }}"
+        vpn_status_after: >-
+          {%- set phase2_list = (vpn_status_after_reset.meta.results | default([]) | selectattr('name', 'search', vpn_name) | list) -%}
+          {%- if phase2_list -%}
+            {%- set phase2 = phase2_list[0] -%}
+            {{- phase2.proxyid[0].status if phase2.proxyid and phase2.proxyid|length > 0 else 'unknown' -}}
+          {%- else -%}
+            not_found
+          {%- endif -%}
 
-    - name: Show flush operation results
+    - name: Show reset operation results
       debug:
         msg:
           - "=============================="
-          - "VPN {{ vpn_name }} Phase 2 Flush Results"
+          - "VPN {{ vpn_name }} Phase 2 Reset Results"
           - "=============================="
           - "Tunnels Found: {{ tunnels_found }}"
           - "Tunnels Count: {{ tunnels_count }}"
-          - "Tunnels Flushed: {{ phase2_names | join(', ') if tunnels_found else 'None' }}"
+          - "Tunnels Reset: {{ phase2_names | join(', ') if tunnels_found else 'None' }}"
           - "Flush Successful: {{ flush_successful }}"
+          - ""
+          - "Status After Flush: {{ vpn_status_after | upper }}"
           - "Workflow Result: {{ 'SUCCESS' if flush_successful else 'FAILED' }}"
+          - ""
+          - "Note: VPN configuration preserved, only sessions were reset"
 
     - name: Fail task if flush operation failed
       fail:
-        msg: "Failed to flush one or more Phase 2 tunnels for VPN {{ vpn_name }}"
+        msg: "Failed to flush VPN {{ vpn_name }} Phase 2 tunnel sessions"
       when: tunnels_found and not flush_successful
 
-    - name: Fail task if no tunnels found to flush
+    - name: Fail task if no tunnels found to reset
       fail:
-        msg: "No Phase 2 tunnels found for VPN {{ vpn_name }} - nothing to flush"
+        msg: "No Phase 2 tunnels found for VPN {{ vpn_name }} - nothing to reset"
       when: not tunnels_found
