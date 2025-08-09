@@ -1,0 +1,33 @@
+---
+# Simplified Fortinet Connection Test
+# Run a simple command and display output
+
+- name: Simple Fortinet Connection Test
+  hosts: "{{ target_hosts }}"
+  gather_facts: no
+  connection: httpapi
+  vars:
+    ansible_network_os: fortinet.fortios.fortios
+    ansible_httpapi_use_ssl: true
+    ansible_httpapi_validate_certs: false
+    ansible_httpapi_port: 443
+    vdom: "{{ vdom | default('root') }}"
+    
+  tasks:
+    - name: Run show system status command
+      fortinet.fortios.fortios_configuration_fact:
+        vdom: "{{ vdom }}"
+        selector: "system_global"
+      register: fortinet_facts
+      
+    - name: Display raw command output
+      debug:
+        msg: "{{ fortinet_facts }}"
+        
+    - name: Display formatted result
+      debug:
+        msg:
+          - "Connection Status: {{ 'SUCCESS' if fortinet_facts is succeeded else 'FAILED' }}"
+          - "Device: {{ inventory_hostname }}"
+          - "User: {{ ansible_user }}"
+          - "Hostname: {{ fortinet_facts.meta.results.hostname | default('Not Retrieved') }}"

@@ -1,0 +1,47 @@
+---
+# Simple Fortinet Connection Test Playbook for AAP 2.5
+# Tests connection to a single Fortinet device and displays system info
+
+- name: Test Fortinet Connection
+  hosts: "{{ target_hosts }}"
+  gather_facts: no
+  connection: httpapi
+  vars:
+    ansible_network_os: fortinet.fortios.fortios
+    ansible_httpapi_use_ssl: true
+    ansible_httpapi_validate_certs: false
+    ansible_httpapi_port: 443
+    vdom: "{{ vdom | default('root') }}"
+    
+  tasks:
+    - name: Get system status
+      fortinet.fortios.fortios_monitor:
+        vdom: "{{ vdom }}"
+        selector: 'system_status'
+      register: system_status
+      
+    - name: Display connection result
+      debug:
+        msg:
+          - "✅ CONNECTION SUCCESSFUL!"
+          - "================================"
+          - "Device: {{ inventory_hostname }}"
+          - "Connected as: {{ ansible_user }}"
+          - "VDOM: {{ vdom }}"
+          - "================================"
+          - "SYSTEM INFORMATION:"
+          - "Hostname: {{ system_status.meta.results.hostname | default('Unknown') }}"
+          - "Model: {{ system_status.meta.results.model | default('Unknown') }}"
+          - "Serial: {{ system_status.meta.results.serial | default('Unknown') }}"
+          - "Version: {{ system_status.meta.results.version | default('Unknown') }}"
+          - "Status: {{ system_status.meta.results.status | default('Unknown') }}"
+          - "HA Mode: {{ system_status.meta.results.ha_mode | default('Standalone') }}"
+          - "Uptime: {{ system_status.meta.results.uptime | default(0) }} seconds"
+      when: system_status is succeeded
+      
+    - name: Display error if connection failed
+      debug:
+        msg:
+          - "❌ CONNECTION FAILED!"
+          - "Error: {{ system_status.msg | default('Unknown error') }}"
+      when: system_status is failed

@@ -1,0 +1,33 @@
+---
+# Minimal Fortinet Connection Test for AAP 2.5
+
+- name: Test Connection to Single Fortinet Device
+  hosts: "{{ target_hosts }}"
+  gather_facts: no
+  connection: httpapi
+  
+  tasks:
+    - name: Get device info
+      fortinet.fortios.fortios_monitor_fact:
+        vdom: "{{ vdom | default('root') }}"
+        formatters:
+          - selector: 'system_firmware_select'
+      register: device_info
+      ignore_errors: yes
+      
+    - name: Print connection result
+      debug:
+        msg: |
+          Connection Test Result:
+          =======================
+          Target Host: {{ inventory_hostname }}
+          Status: {{ 'CONNECTED' if device_info is succeeded else 'FAILED' }}
+          {% if device_info is succeeded %}
+          Response: {{ device_info.meta.response_code | default('Unknown') }}
+          {% else %}
+          Error: {{ device_info.msg | default('Connection failed') }}
+          {% endif %}
+          
+    - name: Show raw output
+      debug:
+        var: device_info
