@@ -10,33 +10,33 @@
   become: no
   
   tasks:
-    - name: Test authentication by getting any configuration
-      fortinet.fortios.fortios_configuration_fact:
+    - name: Test authentication by getting system interface
+      fortinet.fortios.fortios_monitor:
         vdom: "{{ vdom | default('root') }}"
-        selector: 'system_global'
+        selector: 'system_interface'
       register: auth_test
       ignore_errors: yes
       
-    - name: Show result
+    - name: Show connection status
       debug:
         msg:
           - "==============================="
-          - "Fortinet Authentication Test"
+          - "Fortinet Connection Test"
           - "==============================="
           - "Device: {{ inventory_hostname }}"
           - "User: {{ ansible_user }}"
           - "VDOM: {{ vdom | default('root') }}"
           - ""
-          - "Result: {{ 'AUTHENTICATED SUCCESSFULLY!' if auth_test is succeeded else 'AUTHENTICATION FAILED!' }}"
-          - ""
-          - "{% if auth_test is succeeded and auth_test.meta is defined %}"
-          - "Response Code: {{ auth_test.meta.response_code | default('N/A') }}"
-          - "Hostname: {{ auth_test.meta.results.hostname | default('Not configured') }}"
-          - "{% else %}"
-          - "Error: {{ auth_test.msg | default('Unknown error') }}"
-          - "{% endif %}"
+          - "Result: {{ 'CONNECTION SUCCESSFUL!' if auth_test is succeeded else 'CONNECTION FAILED!' }}"
           
-    - name: Show raw output for debugging
+    - name: Show error details if failed
       debug:
-        var: auth_test
+        msg: "Error: {{ auth_test.msg | default('Unknown error') }}"
       when: auth_test is failed
+      
+    - name: Show success details
+      debug:
+        msg: 
+          - "Response Code: {{ auth_test.meta.response_code | default('N/A') }}"
+          - "Successfully connected to Fortinet device"
+      when: auth_test is succeeded
