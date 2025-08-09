@@ -24,15 +24,27 @@
         phase2_names: >-
           {{ vpn_phase2.meta.results | selectattr('name', 'search', vpn_name) | map(attribute='name') | list | unique }}
 
+    - name: Get Phase 2 details for proper reset
+      set_fact:
+        phase2_details: >-
+          {% set p2_list = [] %}
+          {% for phase1 in vpn_phase2.meta.results | selectattr('name', 'search', vpn_name) %}
+            {% for proxy in phase1.proxyid | default([]) %}
+              {% set _ = p2_list.append({'p1name': phase1.name, 'p2name': proxy.p2name, 'p2serial': proxy.p2serial}) %}
+            {% endfor %}
+          {% endfor %}
+          {{ p2_list }}
+
     - name: Bring down Phase 2 tunnels first
       fortinet.fortios.fortios_monitor:
         vdom: "{{ vdom }}"
         access_token: "{{ ansible_password | default(fortinet_api_token) }}"
         selector: 'tunnel_down.vpn.ipsec'
         params:
-          phase2: "{{ item }}"
-          phase1: "{{ vpn_name }}"
-      loop: "{{ phase2_names }}"
+          p1name: "{{ item.p1name }}"
+          p2name: "{{ item.p2name }}"
+          p2serial: "{{ item.p2serial }}"
+      loop: "{{ phase2_details | from_json }}"
       register: down_result
       ignore_errors: yes
 
@@ -46,9 +58,10 @@
         access_token: "{{ ansible_password | default(fortinet_api_token) }}"
         selector: 'tunnel_up.vpn.ipsec'
         params:
-          phase2: "{{ item }}"
-          phase1: "{{ vpn_name }}"
-      loop: "{{ phase2_names }}"
+          p1name: "{{ item.p1name }}"
+          p2name: "{{ item.p2name }}"
+          p2serial: "{{ item.p2serial }}"
+      loop: "{{ phase2_details | from_json }}"
       register: up_result
       ignore_errors: yes
 
