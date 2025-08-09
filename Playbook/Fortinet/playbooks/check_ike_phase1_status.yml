@@ -16,7 +16,7 @@
       fortinet.fortios.fortios_monitor_fact:
         vdom: "{{ vdom }}"
         access_token: "{{ ansible_password | default(fortinet_api_token) }}"
-        selector: 'vpn_ipsec_stats_crypto'
+        selector: 'vpn_ipsec'
       register: ike_phase1
     - name: Show status for specific VPN
       debug:
