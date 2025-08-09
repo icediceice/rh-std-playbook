@@ -86,6 +86,15 @@
           {%- else -%}
             not_found
           {%- endif -%}
+        vpn_up_after_reset: >-
+          {%- set phase2_list = (vpn_status_after_reset.meta.results | default([]) | selectattr('name', 'search', vpn_name) | list) -%}
+          {%- if phase2_list -%}
+            {%- set phase2 = phase2_list[0] -%}
+            {%- set status = phase2.proxyid[0].status if phase2.proxyid and phase2.proxyid|length > 0 else 'unknown' -%}
+            {{- (status == 'up') | bool -}}
+          {%- else -%}
+            {{- false -}}
+          {%- endif -%}
 
     - name: Show reset operation results
       debug:
@@ -99,9 +108,15 @@
           - "Flush Successful: {{ flush_successful }}"
           - ""
           - "Status After Flush: {{ vpn_status_after | upper }}"
-          - "Workflow Result: {{ 'SUCCESS' if flush_successful else 'FAILED' }}"
+          - "Reset Operation: {{ 'SUCCESS' if flush_successful else 'FAILED' }}"
+          - "Workflow Result: {{ 'SUCCESS' if (flush_successful and vpn_up_after_reset) else 'FAILED' }}"
           - ""
           - "Note: VPN configuration preserved, only sessions were reset"
+
+    - name: Fail task if VPN is still down after Phase 2 reset
+      fail:
+        msg: "VPN {{ vpn_name }} is still {{ vpn_status_after | upper }} after Phase 2 reset - workflow failed"
+      when: tunnels_found and flush_successful and not vpn_up_after_reset
 
     - name: Fail task if flush operation failed
       fail:
