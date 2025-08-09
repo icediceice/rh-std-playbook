@@ -80,7 +80,7 @@
       set_fact:
         tunnels_found: "{{ phase2_names | length > 0 }}"
         tunnels_count: "{{ phase2_names | length }}"
-        flush_successful: "{{ (down_result.results | selectattr('failed', 'equalto', false) | list | length == phase2_names | length) and (up_result.results | selectattr('failed', 'equalto', false) | list | length == phase2_names | length) }}"
+        flush_successful: "{{ (down_result.results | selectattr('failed', 'equalto', false) | list | length == (phase2_details | from_json | length)) and (up_result.results | selectattr('failed', 'equalto', false) | list | length == (phase2_details | from_json | length)) }}"
         vpn_status_after: >-
           {%- set phase2_list = (vpn_status_after_reset.meta.results | default([]) | selectattr('name', 'search', vpn_name) | list) -%}
           {%- if phase2_list -%}
