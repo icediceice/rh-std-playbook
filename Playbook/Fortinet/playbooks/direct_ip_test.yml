@@ -1,0 +1,35 @@
+---
+# Direct IP Connection Test for AAP 2.5
+# This version connects directly to an IP without needing inventory
+
+- name: Test Direct Connection to Fortinet
+  hosts: localhost
+  gather_facts: no
+  vars:
+    fortinet_host: "{{ target_hosts | default('172.28.7.58') }}"
+    vdom: "{{ vdom | default('root') }}"
+    
+  tasks:
+    - name: Connect to Fortinet device
+      fortinet.fortios.fortios_monitor_fact:
+        vdom: "{{ vdom }}"
+        formatters:
+          - selector: 'system_status'
+      vars:
+        ansible_host: "{{ fortinet_host }}"
+        ansible_connection: httpapi
+        ansible_network_os: fortinet.fortios.fortios
+        ansible_httpapi_use_ssl: true
+        ansible_httpapi_validate_certs: false
+        ansible_httpapi_port: 443
+        ansible_user: "{{ ansible_user }}"
+        ansible_password: "{{ ansible_password }}"
+      delegate_to: "{{ fortinet_host }}"
+      register: connection_test
+      
+    - name: Show connection result
+      debug:
+        msg:
+          - "Target: {{ fortinet_host }}"
+          - "Status: {{ 'CONNECTED' if connection_test is succeeded else 'FAILED' }}"
+          - "Result: {{ connection_test }}"

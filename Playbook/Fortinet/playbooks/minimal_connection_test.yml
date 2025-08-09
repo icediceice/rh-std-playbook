@@ -8,10 +8,9 @@
   
   tasks:
     - name: Get device info
-      fortinet.fortios.fortios_monitor_fact:
+      fortinet.fortios.fortios_monitor:
         vdom: "{{ vdom | default('root') }}"
-        formatters:
-          - selector: 'system_firmware_select'
+        selector: 'system_status'
       register: device_info
       ignore_errors: yes
       

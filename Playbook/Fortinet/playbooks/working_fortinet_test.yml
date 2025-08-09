@@ -1,0 +1,39 @@
+---
+# Working Fortinet Connection Test for AAP 2.5
+
+- name: Test Connection to Fortinet Device
+  hosts: "{{ target_hosts }}"
+  gather_facts: no
+  connection: httpapi
+  become: no
+  vars:
+    ansible_network_os: fortinet.fortios.fortios
+    ansible_httpapi_use_ssl: true
+    ansible_httpapi_validate_certs: false
+    ansible_httpapi_port: 443
+    
+  tasks:
+    - name: Get system status
+      fortinet.fortios.fortios_monitor:
+        vdom: "{{ vdom | default('root') }}"
+        selector: 'system_status'
+      register: system_status
+      
+    - name: Display result
+      debug:
+        msg:
+          - "================================"
+          - "Connection Test Result"
+          - "================================"
+          - "Target: {{ inventory_hostname }}"
+          - "Status: {{ 'SUCCESS - Connected!' if system_status is succeeded else 'FAILED' }}"
+          - ""
+          - "{% if system_status is succeeded and system_status.meta.results is defined %}"
+          - "Device Info:"
+          - "  Hostname: {{ system_status.meta.results.hostname | default('N/A') }}"
+          - "  Model: {{ system_status.meta.results.model | default('N/A') }}"
+          - "  Serial: {{ system_status.meta.results.serial | default('N/A') }}"
+          - "  Version: {{ system_status.meta.results.version | default('N/A') }}"
+          - "{% else %}"
+          - "Error: {{ system_status.msg | default('Connection failed') }}"
+          - "{% endif %}"

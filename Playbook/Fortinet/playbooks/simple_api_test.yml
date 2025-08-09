@@ -1,0 +1,24 @@
+---
+# Simple Fortinet API Test - No privilege escalation
+
+- name: Simple Fortinet API Connection Test
+  hosts: "{{ target_hosts }}"
+  gather_facts: no
+  connection: httpapi
+  become: no
+  
+  tasks:
+    - name: Test API connection with simple command
+      fortinet.fortios.fortios_configuration_fact:
+        vdom: "{{ vdom | default('root') }}"
+        selector: "system_global"
+      register: api_test
+      
+    - name: Show result
+      debug:
+        msg: 
+          - "Host: {{ inventory_hostname }}"
+          - "Connection: {{ 'SUCCESS' if api_test is not failed else 'FAILED' }}"
+          - "{% if api_test is not failed and api_test.meta is defined %}"
+          - "Response Code: {{ api_test.meta.response_code | default('N/A') }}"
+          - "{% endif %}"
