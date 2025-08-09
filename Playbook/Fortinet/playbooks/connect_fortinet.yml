@@ -127,23 +127,28 @@
       vars:
         ansible_connection: local
       when: auth_result is succeeded
-          Authentication: {{ 'SUCCESS' if login_result is succeeded else 'FAILED' }}
+
+    - name: Create detailed connection report
+      copy:
+        content: |
+          Authentication: {{ 'SUCCESS' if auth_result is succeeded else 'FAILED' }}
           
           Device Information:
-          - Hostname: {{ login_result.meta.results.hostname | default('Unknown') }}
-          - Version: {{ login_result.meta.results.version | default('Unknown') }}
-          - Serial: {{ login_result.meta.results.serial | default('Unknown') }}
+          - Hostname: {{ auth_result.meta.results.hostname | default('Unknown') }}
+          - Version: {{ auth_result.meta.results.version | default('Unknown') }}
+          - Serial: {{ auth_result.meta.results.serial | default('Unknown') }}
           
           Started by: {{ awx_user_name | default(ansible_user_id) }}
         dest: "/tmp/fortinet-connection-{{ inventory_hostname }}-{{ ansible_date_time.epoch }}.log"
       delegate_to: localhost
       vars:
         ansible_connection: local
+      when: auth_result is succeeded
 
     - name: Fail if authentication was unsuccessful
       fail:
         msg: "Failed to authenticate to {{ inventory_hostname }}"
-      when: login_result is failed
+      when: auth_result is failed
 
 - name: Connection summary and cleanup
   hosts: localhost
