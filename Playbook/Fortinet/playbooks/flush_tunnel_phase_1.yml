@@ -32,14 +32,11 @@
           {% endfor %}
           {{ phase2_list | unique }}
 
-    - name: Reset IKE gateway for VPN tunnel (keeps config)
+    - name: Clear IKE gateway for VPN tunnel (keeps config)
       fortinet.fortios.fortios_monitor:
         vdom: "{{ vdom }}"
         access_token: "{{ ansible_password | default(fortinet_api_token) }}"
-        selector: 'vpn-ipsec_reset-ike-gateway'
-        params:
-          gateway: "{{ item }}"
-      loop: "{{ phase1_names }}"
+        selector: 'clear.vpn.ike'
       register: reset_result
       ignore_errors: yes
 
@@ -58,7 +55,7 @@
       set_fact:
         tunnels_found: "{{ phase1_names | length > 0 }}"
         tunnels_count: "{{ phase1_names | length }}"
-        reset_successful: "{{ reset_result.results | selectattr('failed', 'equalto', false) | list | length == phase1_names | length }}"
+        reset_successful: "{{ reset_result is succeeded }}"
         vpn_status_after: >-
           {%- set phase1_list = (vpn_status_after_reset.meta.results | default([]) | selectattr('name', 'search', vpn_name) | list) -%}
           {%- if phase1_list -%}
