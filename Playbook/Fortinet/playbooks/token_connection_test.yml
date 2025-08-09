@@ -17,7 +17,7 @@
     - name: Test token authentication
       fortinet.fortios.fortios_system_global:
         vdom: "{{ vdom | default('root') }}"
-        access_token: "{{ ansible_password }}"
+        access_token: "{{ fortinet_api_token }}"
       check_mode: yes
       register: token_test
       ignore_errors: yes
