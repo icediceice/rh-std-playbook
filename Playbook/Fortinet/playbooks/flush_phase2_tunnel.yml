@@ -33,6 +33,30 @@
       loop: "{{ phase2_names }}"
       register: flush_result
 
-    - name: Show flush result
+    - name: Set flush operation facts for workflow
+      set_fact:
+        tunnels_found: "{{ phase2_names | length > 0 }}"
+        tunnels_count: "{{ phase2_names | length }}"
+        flush_successful: "{{ flush_result.results | selectattr('failed', 'equalto', false) | list | length == phase2_names | length }}"
+
+    - name: Show flush operation results
       debug:
-        var: flush_result
+        msg:
+          - "=============================="
+          - "VPN {{ vpn_name }} Phase 2 Flush Results"
+          - "=============================="
+          - "Tunnels Found: {{ tunnels_found }}"
+          - "Tunnels Count: {{ tunnels_count }}"
+          - "Tunnels Flushed: {{ phase2_names | join(', ') if tunnels_found else 'None' }}"
+          - "Flush Successful: {{ flush_successful }}"
+          - "Workflow Result: {{ 'SUCCESS' if flush_successful else 'FAILED' }}"
+
+    - name: Fail task if flush operation failed
+      fail:
+        msg: "Failed to flush one or more Phase 2 tunnels for VPN {{ vpn_name }}"
+      when: tunnels_found and not flush_successful
+
+    - name: Fail task if no tunnels found to flush
+      fail:
+        msg: "No Phase 2 tunnels found for VPN {{ vpn_name }} - nothing to flush"
+      when: not tunnels_found

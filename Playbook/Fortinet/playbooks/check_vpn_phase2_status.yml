@@ -18,14 +18,61 @@
         access_token: "{{ ansible_password | default(fortinet_api_token) }}"
         selector: 'vpn_ipsec'
       register: vpn_phase2
-    - name: Show status for specific VPN
-      debug:
-        msg: >
-          {% set phase2 = (vpn_phase2.meta.results | selectattr('name', 'search', vpn_name) | list) %}
-          {% if phase2 and phase2[0]['status'] == 'up' %}
-            VPN {{ vpn_name }} Phase 2 is up
-          {% elif phase2 %}
-            VPN {{ vpn_name }} Phase 2 is down
+    - name: Extract VPN Phase 2 status and set workflow facts
+      set_fact:
+        vpn_found: >-
+          {{ (vpn_phase2.meta.results | default([]) | selectattr('name', 'search', vpn_name) | list | length > 0) }}
+        vpn_status: >-
+          {%- set phase2_list = (vpn_phase2.meta.results | default([]) | selectattr('name', 'search', vpn_name) | list) -%}
+          {%- if phase2_list -%}
+            {%- set phase2 = phase2_list[0] -%}
+            {{- phase2.proxyid[0].status if phase2.proxyid and phase2.proxyid|length > 0 else 'unknown' -}}
+          {%- else -%}
+            not_found
+          {%- endif -%}
+        vpn_is_up: >-
+          {%- set phase2_list = (vpn_phase2.meta.results | default([]) | selectattr('name', 'search', vpn_name) | list) -%}
+          {%- if phase2_list -%}
+            {%- set phase2 = phase2_list[0] -%}
+            {%- set status = phase2.proxyid[0].status if phase2.proxyid and phase2.proxyid|length > 0 else 'unknown' -%}
+            {{- (status == 'up') | bool -}}
+          {%- else -%}
+            {{- false -}}
+          {%- endif -%}
+        vpn_details: >-
+          {% set phase2_list = (vpn_phase2.meta.results | default([]) | selectattr('name', 'search', vpn_name) | list) %}
+          {% if phase2_list %}
+            {% set phase2 = phase2_list[0] %}
+            {
+              "name": "{{ phase2.name }}",
+              "remote_gateway": "{{ phase2.rgwy | default('Unknown') }}",
+              "connection_count": {{ phase2.connection_count | default(0) }},
+              "incoming_bytes": {{ phase2.incoming_bytes | default(0) }},
+              "outgoing_bytes": {{ phase2.outgoing_bytes | default(0) }}
+            }
           {% else %}
-            VPN {{ vpn_name }} Phase 2 not found
+            {}
           {% endif %}
+
+    - name: Show VPN Phase 2 status results
+      debug:
+        msg:
+          - "=============================="
+          - "VPN {{ vpn_name }} Phase 2 Status Check"
+          - "=============================="
+          - "VPN Found: {{ vpn_found }}"
+          - "VPN Status: {{ vpn_status | upper }}"
+          - "VPN Is Up: {{ vpn_is_up }}"
+          - "Workflow Result: {{ 'SUCCESS' if vpn_is_up else 'FAILED' }}"
+          - ""
+          - "VPN Details: {{ vpn_details | from_json if vpn_found else 'N/A' }}"
+
+    - name: Fail task if VPN Phase 2 is down (for workflow control)
+      fail:
+        msg: "VPN {{ vpn_name }} Phase 2 is {{ vpn_status | upper }} - Workflow failed"
+      when: vpn_found and (vpn_status | trim) != 'up'
+
+    - name: Fail task if VPN Phase 2 not found
+      fail:
+        msg: "VPN {{ vpn_name }} Phase 2 not found in FortiGate configuration"
+      when: not vpn_found
