@@ -23,22 +23,22 @@
         vpn_found: >-
           {{ (ike_phase1.meta.results | default([]) | selectattr('name', 'search', vpn_name) | list | length > 0) }}
         vpn_status: >-
-          {% set phase1_list = (ike_phase1.meta.results | default([]) | selectattr('name', 'search', vpn_name) | list) %}
-          {% if phase1_list %}
-            {% set phase1 = phase1_list[0] %}
-            {{ phase1.proxyid[0].status if phase1.proxyid and phase1.proxyid|length > 0 else 'unknown' }}
-          {% else %}
+          {%- set phase1_list = (ike_phase1.meta.results | default([]) | selectattr('name', 'search', vpn_name) | list) -%}
+          {%- if phase1_list -%}
+            {%- set phase1 = phase1_list[0] -%}
+            {{- phase1.proxyid[0].status if phase1.proxyid and phase1.proxyid|length > 0 else 'unknown' -}}
+          {%- else -%}
             not_found
-          {% endif %}
+          {%- endif -%}
         vpn_is_up: >-
-          {% set phase1_list = (ike_phase1.meta.results | default([]) | selectattr('name', 'search', vpn_name) | list) %}
-          {% if phase1_list %}
-            {% set phase1 = phase1_list[0] %}
-            {% set status = phase1.proxyid[0].status if phase1.proxyid and phase1.proxyid|length > 0 else 'unknown' %}
-            {{ status == 'up' }}
-          {% else %}
-            false
-          {% endif %}
+          {%- set phase1_list = (ike_phase1.meta.results | default([]) | selectattr('name', 'search', vpn_name) | list) -%}
+          {%- if phase1_list -%}
+            {%- set phase1 = phase1_list[0] -%}
+            {%- set status = phase1.proxyid[0].status if phase1.proxyid and phase1.proxyid|length > 0 else 'unknown' -%}
+            {{- (status == 'up') | bool -}}
+          {%- else -%}
+            {{- false -}}
+          {%- endif -%}
         vpn_details: >-
           {% set phase1_list = (ike_phase1.meta.results | default([]) | selectattr('name', 'search', vpn_name) | list) %}
           {% if phase1_list %}
@@ -70,7 +70,7 @@
     - name: Fail task if VPN is down (for workflow control)
       fail:
         msg: "VPN {{ vpn_name }} is {{ vpn_status | upper }} - Workflow failed"
-      when: not vpn_is_up and vpn_found
+      when: vpn_found and (vpn_status | trim) != 'up'
 
     - name: Fail task if VPN not found
       fail:
