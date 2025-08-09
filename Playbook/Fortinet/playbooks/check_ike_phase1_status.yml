@@ -1,18 +1,21 @@
 ---
 - name: Check IKE Phase 1 Status
-  hosts: "{{ fortinet_hosts }}"
+  hosts: "{{ target_hosts }}"
   gather_facts: no
   connection: httpapi
+  become: no
   vars:
-    ansible_httpapi_use_ssl: yes
-    ansible_httpapi_validate_certs: no
-    ansible_network_os: fortios
+    ansible_network_os: fortinet.fortios.fortios
+    ansible_httpapi_use_ssl: true
+    ansible_httpapi_validate_certs: false
+    ansible_httpapi_port: 443
     vdom: "{{ vdom | default('root') }}"
     vpn_name: "{{ vpn_name | default('vpn1') }}"
   tasks:
     - name: Get IKE Phase 1 status
       fortinet.fortios.fortios_monitor_fact:
         vdom: "{{ vdom }}"
+        access_token: "{{ ansible_password | default(fortinet_api_token) }}"
         selector: 'vpn_ipsec_stats_crypto'
       register: ike_phase1
     - name: Show status for specific VPN

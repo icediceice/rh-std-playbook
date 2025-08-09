@@ -1,12 +1,14 @@
 ---
 - name: Run Diagnostic on Fortinet VA
-  hosts: "{{ fortinet_hosts }}"
+  hosts: "{{ target_hosts }}"
   gather_facts: no
   connection: httpapi
+  become: no
   vars:
-    ansible_httpapi_use_ssl: yes
-    ansible_httpapi_validate_certs: no
-    ansible_network_os: fortios
+    ansible_network_os: fortinet.fortios.fortios
+    ansible_httpapi_use_ssl: true
+    ansible_httpapi_validate_certs: false
+    ansible_httpapi_port: 443
     diag_command: "{{ diagnostic_command | default('diagnose vpn ike gateway list') }}"
     vdom: "{{ vdom | default('root') }}"
   tasks:
@@ -14,6 +16,7 @@
       fortinet.fortios.fortios_monitor_fact:
         vdom: "{{ vdom }}"
         selector: 'system_status'
+        access_token: "{{ ansible_password | default(fortinet_api_token) }}"
       register: diag_result
     - name: Show diagnostic result
       debug:

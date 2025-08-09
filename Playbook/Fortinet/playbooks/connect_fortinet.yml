@@ -62,16 +62,12 @@
   hosts: "{{ target_hosts }}"
   gather_facts: no
   connection: httpapi
+  become: no
   vars:
-    # These variables are automatically injected by AAP machine credentials
-    # ansible_user: (provided by AAP credential)
-    # ansible_password: (provided by AAP credential)
-    
-    # Connection settings (can be overridden by inventory)
-    ansible_httpapi_use_ssl: "{{ ansible_httpapi_use_ssl | default(true) }}"
-    ansible_httpapi_validate_certs: "{{ ansible_httpapi_validate_certs | default(false) }}"
-    ansible_network_os: "{{ ansible_network_os | default('fortios') }}"
-    ansible_httpapi_port: "{{ ansible_httpapi_port | default(443) }}"
+    ansible_network_os: fortinet.fortios.fortios
+    ansible_httpapi_use_ssl: true
+    ansible_httpapi_validate_certs: false
+    ansible_httpapi_port: 443
     ansible_httpapi_timeout: "{{ ansible_httpapi_timeout | default(30) }}"
     vdom: "{{ vdom | default('root') }}"
     
@@ -106,7 +102,7 @@
       fortinet.fortios.fortios_monitor_fact:
         vdom: "{{ vdom }}"
         selector: 'system_status'
-        access_token: "{{ fortinet_access_token | default(omit) }}"
+        access_token: "{{ ansible_password | default(fortinet_api_token) }}"
       register: auth_result
       retries: 3
       delay: 5

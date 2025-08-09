@@ -1,7 +1,8 @@
 ---
 - name: Verify Application over TCP/IP
-  hosts: "{{ fortinet_hosts }}"
+  hosts: "{{ target_hosts }}"
   gather_facts: no
+  become: no
   vars:
     app_host: "{{ app_host | default('app.example.com') }}"
     app_port: "{{ app_port | default('80') }}"

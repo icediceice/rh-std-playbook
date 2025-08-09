@@ -1,12 +1,14 @@
 ---
 - name: Enable Packet Capture on Fortinet VA
-  hosts: "{{ fortinet_hosts }}"
+  hosts: "{{ target_hosts }}"
   gather_facts: no
   connection: httpapi
+  become: no
   vars:
-    ansible_httpapi_use_ssl: yes
-    ansible_httpapi_validate_certs: no
-    ansible_network_os: fortios
+    ansible_network_os: fortinet.fortios.fortios
+    ansible_httpapi_use_ssl: true
+    ansible_httpapi_validate_certs: false
+    ansible_httpapi_port: 443
     vpn_name: "{{ vpn_name | default('vpn1') }}"
     filter: "{{ capture_filter | default('') }}"
     vdom: "{{ vdom | default('root') }}"
@@ -15,6 +17,7 @@
       fortinet.fortios.fortios_monitor_fact:
         vdom: "{{ vdom }}"
         selector: 'vpn_ipsec_stats_crypto'
+        access_token: "{{ ansible_password | default(fortinet_api_token) }}"
       register: vpn_phase2
 
     - name: Set list of interfaces related to the VPN
@@ -26,6 +29,7 @@
       fortinet.fortios.fortios_system_sniffer:
         state: "present"
         vdom: "{{ vdom }}"
+        access_token: "{{ ansible_password | default(fortinet_api_token) }}"
         system_sniffer:
           name: "capture_{{ item }}_{{ ansible_date_time.epoch }}"
           interface: "{{ item }}"

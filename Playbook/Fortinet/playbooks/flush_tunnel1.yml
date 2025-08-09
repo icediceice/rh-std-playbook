@@ -1,12 +1,14 @@
 ---
 - name: Flush Tunnel 1
-  hosts: "{{ fortinet_hosts }}"
+  hosts: "{{ target_hosts }}"
   gather_facts: no
   connection: httpapi
+  become: no
   vars:
-    ansible_httpapi_use_ssl: yes
-    ansible_httpapi_validate_certs: no
-    ansible_network_os: fortios
+    ansible_network_os: fortinet.fortios.fortios
+    ansible_httpapi_use_ssl: true
+    ansible_httpapi_validate_certs: false
+    ansible_httpapi_port: 443
     tunnel_name: "{{ tunnel_name | default('tunnel1') }}"
     vdom: "{{ vdom | default('root') }}"
   tasks:
@@ -14,6 +16,7 @@
       fortinet.fortios.fortios_vpn_ipsec_phase2_interface:
         state: "absent"
         vdom: "{{ vdom }}"
+        access_token: "{{ ansible_password | default(fortinet_api_token) }}"
         name: "{{ tunnel_name }}"
       register: flush_tunnel1_result
     - name: Show flush result
