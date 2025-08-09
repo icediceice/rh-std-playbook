@@ -3,21 +3,22 @@
 # Use this playbook to verify credentials and connectivity before running other playbooks
 # Required variables: target_hosts (device/group), vdom (default: root)
 
-- name: Test Fortinet Authentication
+- name: Test Fortinet Connection
   hosts: "{{ target_hosts }}"
   gather_facts: no
   connection: httpapi
   become: no
   
   tasks:
-    - name: Test authentication by getting system interface
-      fortinet.fortios.fortios_monitor:
+    - name: Test connection by getting system global config
+      fortinet.fortios.fortios_system_global:
         vdom: "{{ vdom | default('root') }}"
-        selector: 'system_interface'
-      register: auth_test
+        state: "present"
+      check_mode: yes
+      register: connection_test
       ignore_errors: yes
       
-    - name: Show connection status
+    - name: Show connection result
       debug:
         msg:
           - "==============================="
@@ -27,16 +28,25 @@
           - "User: {{ ansible_user }}"
           - "VDOM: {{ vdom | default('root') }}"
           - ""
-          - "Result: {{ 'CONNECTION SUCCESSFUL!' if auth_test is succeeded else 'CONNECTION FAILED!' }}"
+          - "Status: {{ 'CONNECTION SUCCESS!' if connection_test is not failed else 'CONNECTION FAILED!' }}"
           
-    - name: Show error details if failed
-      debug:
-        msg: "Error: {{ auth_test.msg | default('Unknown error') }}"
-      when: auth_test is failed
-      
     - name: Show success details
       debug:
-        msg: 
-          - "Response Code: {{ auth_test.meta.response_code | default('N/A') }}"
-          - "Successfully connected to Fortinet device"
-      when: auth_test is succeeded
+        msg:
+          - "✅ Successfully authenticated to FortiGate"
+          - "✅ API connection working"
+          - "✅ Credentials are valid"
+      when: connection_test is not failed
+      
+    - name: Show failure details
+      debug:
+        msg:
+          - "❌ Connection failed"
+          - "Error: {{ connection_test.msg | default('Unknown error') }}"
+          - ""
+          - "Check:"
+          - "- Device IP/hostname is correct"
+          - "- Username/password in AAP credential"
+          - "- Device allows HTTPS admin access"
+          - "- Port 443 is accessible"
+      when: connection_test is failed
