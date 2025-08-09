@@ -1,0 +1,57 @@
+---
+# FortiGate SSH Connection Test
+# For devices that use SSH instead of HTTPS API
+
+- name: Test FortiGate SSH Connection
+  hosts: "{{ target_hosts }}"
+  gather_facts: no
+  connection: network_cli
+  become: no
+  vars:
+    ansible_network_os: fortinet.fortios.fortios
+    ansible_port: 22
+    ansible_connection: network_cli
+  
+  tasks:
+    - name: Test SSH connection and run basic command
+      fortinet.fortios.fortios_command:
+        commands:
+          - get system status
+      register: ssh_test
+      ignore_errors: yes
+      
+    - name: Show connection result
+      debug:
+        msg:
+          - "==============================="
+          - "FortiGate SSH Connection Test"
+          - "==============================="
+          - "Device: {{ inventory_hostname }}"
+          - "IP: {{ ansible_host }}"
+          - "Port: 22 (SSH)"
+          - "User: {{ ansible_user }}"
+          - ""
+          - "Status: {{ 'SSH CONNECTION SUCCESS!' if ssh_test is succeeded else 'SSH CONNECTION FAILED!' }}"
+          
+    - name: Show command output
+      debug:
+        msg: 
+          - "✅ SSH connection working"
+          - "✅ Authentication successful"
+          - "✅ FortiGate responded to command"
+          - ""
+          - "Command output:"
+          - "{{ ssh_test.stdout_lines | default(['No output']) }}"
+      when: ssh_test is succeeded
+      
+    - name: Show error details
+      debug:
+        msg:
+          - "❌ SSH connection failed"
+          - "Error: {{ ssh_test.msg | default('Unknown error') }}"
+          - ""
+          - "Check:"
+          - "- SSH is enabled on FortiGate (port 22)"
+          - "- Username/password correct in AAP credential"
+          - "- No SSH IP restrictions on device"
+      when: ssh_test is failed

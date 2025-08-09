@@ -1,0 +1,47 @@
+---
+# FortiGate Port Discovery Test
+# Tests common FortiGate admin ports
+
+- name: Discover FortiGate Admin Port
+  hosts: "{{ target_hosts }}"
+  gather_facts: no
+  connection: local
+  become: no
+  
+  vars:
+    test_ports: [443, 8443, 80, 8080, 10443]
+    device_ip: "{{ ansible_host | default(inventory_hostname) }}"
+  
+  tasks:
+    - name: Show target device
+      debug:
+        msg: "Testing admin ports on {{ device_ip }}"
+        
+    - name: Test each common admin port
+      wait_for:
+        host: "{{ device_ip }}"
+        port: "{{ item }}"
+        timeout: 5
+      loop: "{{ test_ports }}"
+      register: port_tests
+      ignore_errors: yes
+      
+    - name: Show port test results
+      debug:
+        msg:
+          - "Port {{ item.item }}: {{ 'OPEN' if item is succeeded else 'CLOSED/FILTERED' }}"
+      loop: "{{ port_tests.results }}"
+      
+    - name: Show available ports
+      debug:
+        msg: "Available ports: {{ port_tests.results | selectattr('failed', 'equalto', false) | map(attribute='item') | list }}"
+        
+    - name: Recommended configuration
+      debug:
+        msg:
+          - "Update your inventory host variables:"
+          - "ansible_httpapi_port: {{ item.item }}"
+      loop: "{{ port_tests.results }}"
+      when: item is succeeded
+      loop_control:
+        label: "Port {{ item.item }}"
