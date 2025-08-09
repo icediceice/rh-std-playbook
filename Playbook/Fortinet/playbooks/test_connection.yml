@@ -1,0 +1,42 @@
+---
+# Test Connection to Fortinet Device
+# Use this playbook to verify credentials and connectivity before running other playbooks
+# Required variables: target_hosts (device/group), vdom (default: root)
+
+- name: Test Fortinet Authentication
+  hosts: "{{ target_hosts }}"
+  gather_facts: no
+  connection: httpapi
+  become: no
+  
+  tasks:
+    - name: Test authentication by getting any configuration
+      fortinet.fortios.fortios_configuration_fact:
+        vdom: "{{ vdom | default('root') }}"
+        selector: 'system_global'
+      register: auth_test
+      ignore_errors: yes
+      
+    - name: Show result
+      debug:
+        msg:
+          - "==============================="
+          - "Fortinet Authentication Test"
+          - "==============================="
+          - "Device: {{ inventory_hostname }}"
+          - "User: {{ ansible_user }}"
+          - "VDOM: {{ vdom | default('root') }}"
+          - ""
+          - "Result: {{ 'AUTHENTICATED SUCCESSFULLY!' if auth_test is succeeded else 'AUTHENTICATION FAILED!' }}"
+          - ""
+          - "{% if auth_test is succeeded and auth_test.meta is defined %}"
+          - "Response Code: {{ auth_test.meta.response_code | default('N/A') }}"
+          - "Hostname: {{ auth_test.meta.results.hostname | default('Not configured') }}"
+          - "{% else %}"
+          - "Error: {{ auth_test.msg | default('Unknown error') }}"
+          - "{% endif %}"
+          
+    - name: Show raw output for debugging
+      debug:
+        var: auth_test
+      when: auth_test is failed
