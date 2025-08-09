@@ -11,7 +11,7 @@
   tasks:
     - name: Test basic network connectivity
       wait_for:
-        host: "{{ ansible_host }}"
+        host: "{{ hostvars[inventory_hostname]['ansible_host'] }}"
         port: 443
         timeout: 10
       delegate_to: localhost
