@@ -1,0 +1,62 @@
+---
+- name: Flush VPN Phase 1 Tunnel
+  hosts: "{{ target_hosts }}"
+  gather_facts: no
+  connection: httpapi
+  become: no
+  vars:
+    ansible_network_os: fortinet.fortios.fortios
+    ansible_httpapi_use_ssl: true
+    ansible_httpapi_validate_certs: false
+    ansible_httpapi_port: 443
+    vpn_name: "{{ vpn_name | default('vpn1') }}"
+    vdom: "{{ vdom | default('root') }}"
+  tasks:
+    - name: Get VPN Phase 1 tunnels for the VPN
+      fortinet.fortios.fortios_monitor_fact:
+        vdom: "{{ vdom }}"
+        access_token: "{{ ansible_password | default(fortinet_api_token) }}"
+        selector: 'vpn_ipsec'
+      register: vpn_phase1
+
+    - name: Set list of phase1 tunnels related to the VPN
+      set_fact:
+        phase1_names: >-
+          {{ vpn_phase1.meta.results | selectattr('name', 'search', vpn_name) | map(attribute='name') | list | unique }}
+
+    - name: Flush all Phase 1 tunnels for the VPN
+      fortinet.fortios.fortios_vpn_ipsec_phase1_interface:
+        state: "absent"
+        vdom: "{{ vdom }}"
+        access_token: "{{ ansible_password | default(fortinet_api_token) }}"
+        name: "{{ item }}"
+      loop: "{{ phase1_names }}"
+      register: flush_result
+
+    - name: Set flush operation facts for workflow
+      set_fact:
+        tunnels_found: "{{ phase1_names | length > 0 }}"
+        tunnels_count: "{{ phase1_names | length }}"
+        flush_successful: "{{ flush_result.results | selectattr('failed', 'equalto', false) | list | length == phase1_names | length }}"
+
+    - name: Show flush operation results
+      debug:
+        msg:
+          - "=============================="
+          - "VPN {{ vpn_name }} Phase 1 Flush Results"
+          - "=============================="
+          - "Tunnels Found: {{ tunnels_found }}"
+          - "Tunnels Count: {{ tunnels_count }}"
+          - "Tunnels Flushed: {{ phase1_names | join(', ') if tunnels_found else 'None' }}"
+          - "Flush Successful: {{ flush_successful }}"
+          - "Workflow Result: {{ 'SUCCESS' if flush_successful else 'FAILED' }}"
+
+    - name: Fail task if flush operation failed
+      fail:
+        msg: "Failed to flush one or more Phase 1 tunnels for VPN {{ vpn_name }}"
+      when: tunnels_found and not flush_successful
+
+    - name: Fail task if no tunnels found to flush
+      fail:
+        msg: "No Phase 1 tunnels found for VPN {{ vpn_name }} - nothing to flush"
+      when: not tunnels_found
