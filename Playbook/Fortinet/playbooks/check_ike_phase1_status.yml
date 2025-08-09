@@ -18,14 +18,19 @@
         access_token: "{{ ansible_password | default(fortinet_api_token) }}"
         selector: 'vpn_ipsec'
       register: ike_phase1
+    - name: Show raw VPN data for debugging
+      debug:
+        msg: "Raw VPN data: {{ ike_phase1.meta.results | default('No results') }}"
+        
     - name: Show status for specific VPN
       debug:
         msg: >
-          {% set phase1 = (ike_phase1.meta.results | selectattr('name', 'search', vpn_name) | list) %}
-          {% if phase1 and phase1[0]['status'] == 'up' %}
-            VPN {{ vpn_name }} Phase 1 is up
-          {% elif phase1 %}
-            VPN {{ vpn_name }} Phase 1 is down
+          {% set phase1_list = (ike_phase1.meta.results | default([]) | selectattr('name', 'search', vpn_name) | list) %}
+          {% if phase1_list %}
+            {% set phase1 = phase1_list[0] %}
+            VPN {{ vpn_name }} found - Name: {{ phase1.name | default('Unknown') }}, 
+            State: {{ phase1.state | default('Unknown') }},
+            Proxyid: {{ phase1.proxyid | default('N/A') }}
           {% else %}
-            VPN {{ vpn_name }} Phase 1 not found
+            VPN {{ vpn_name }} not found in results
           {% endif %}
