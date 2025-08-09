@@ -32,13 +32,13 @@
           {% endfor %}
           {{ phase2_list | unique }}
 
-    - name: Reset VPN Phase 1 tunnel sessions (keeps config)
-      fortinet.fortios.fortios_system_command:
+    - name: Reset IKE gateway for VPN tunnel (keeps config)
+      fortinet.fortios.fortios_monitor:
         vdom: "{{ vdom }}"
         access_token: "{{ ansible_password | default(fortinet_api_token) }}"
-        commands:
-          - "diagnose vpn ike gateway clear {{ item }}"
-          - "diagnose vpn tunnel reset {{ item }}"
+        selector: 'vpn-ipsec_reset-ike-gateway'
+        params:
+          gateway: "{{ item }}"
       loop: "{{ phase1_names }}"
       register: reset_result
       ignore_errors: yes
