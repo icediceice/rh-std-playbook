@@ -29,7 +29,8 @@
         state: "absent"
         vdom: "{{ vdom }}"
         access_token: "{{ ansible_password | default(fortinet_api_token) }}"
-        name: "{{ item }}"
+        vpn_ipsec_phase1_interface:
+          name: "{{ item }}"
       loop: "{{ phase1_names }}"
       register: flush_result
 
