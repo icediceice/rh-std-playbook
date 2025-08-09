@@ -176,13 +176,26 @@ group_vars/
 
 ### 1. Set Up Execution Environment
 ```bash
-# Build custom execution environment (optional)
-ansible-builder build --tag fortinet-ee:latest .
+# Build custom execution environment
+# All EE files are in the execution-environment/ directory
 
-# Or use pre-built EE in AAP console
-# Navigate to Administration > Execution Environments
-# Add: quay.io/ansible/automation-hub-ee:latest
+# Quick build from this directory
+./build-ee.sh
+
+# Or build manually
+cd execution-environment
+./build.sh
+
+# Or use Make for more options
+cd execution-environment
+make build
+make test
+make push REGISTRY=your-registry.com
 ```
+
+Then in AAP console:
+- Navigate to **Administration > Execution Environments**
+- Add your custom Fortinet EE image
 
 ### 2. Import Project in AAP
 1. **Create Project** in AAP web console

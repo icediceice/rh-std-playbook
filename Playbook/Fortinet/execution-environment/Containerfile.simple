@@ -1,0 +1,65 @@
+FROM docker.io/alpine:latest
+
+# Set environment
+ENV PIP_BREAK_SYSTEM_PACKAGES=1
+USER root
+
+# Install system packages
+RUN apk update && apk add --no-cache \
+    python3 \
+    py3-pip \
+    gcc \
+    python3-dev \
+    musl-dev \
+    libffi-dev \
+    openssl-dev \
+    git \
+    openssh-client \
+    && rm -rf /var/cache/apk/*
+
+# Install Python packages
+RUN pip3 install --upgrade pip
+RUN pip3 install \
+    ansible-core>=2.15.0 \
+    ansible-runner>=2.3.0 \
+    fortiosapi>=1.0.0 \
+    netaddr>=0.8.0 \
+    paramiko>=2.11.0
+
+# Install Ansible collections
+RUN ansible-galaxy collection install \
+    ansible.netcommon:>=5.0.0 \
+    ansible.posix:>=1.5.0 \
+    --ignore-certs
+
+RUN ansible-galaxy collection install \
+    fortinet.fortios:>=2.3.0 \
+    --ignore-certs
+
+# Create symlinks and directories
+RUN ln -sf /usr/bin/python3 /usr/bin/python
+RUN mkdir -p /usr/share/ansible/collections /runner
+RUN cp -r /root/.ansible/collections/* /usr/share/ansible/collections/ 2>/dev/null || true
+RUN chmod -R 755 /usr/share/ansible/collections
+
+# Set working directory and permissions
+WORKDIR /runner
+RUN chmod -R 755 /runner
+RUN chgrp -R 0 /runner && chmod -R g=u /runner
+
+# Install dumb-init
+RUN pip3 install dumb-init==1.2.5
+
+# Verification
+RUN echo "=== Fortinet EE Build Complete ===" \
+    && echo "Collections:" && ansible-galaxy collection list | grep -E "(fortinet|ansible)" \
+    && echo "Python packages:" && pip3 list | grep -E "(ansible|fortios|netaddr|paramiko)" \
+    && echo "Ansible version:" && ansible --version
+
+# Set labels and user
+LABEL ansible-execution-environment=true
+USER 1000
+
+# Entry point
+ENTRYPOINT ["dumb-init"]
+CMD ["bash"]

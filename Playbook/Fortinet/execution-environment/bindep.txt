@@ -1,0 +1,6 @@
+# System packages required for Fortinet collections and AAP 2.5
+gcc [platform:centos platform:rhel]
+python3-devel [platform:centos platform:rhel]
+libxml2-devel [platform:centos platform:rhel]
+git [platform:rpm]
+wget [platform:rpm]

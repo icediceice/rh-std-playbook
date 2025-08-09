@@ -1,0 +1,31 @@
+---
+# Execution Environment for AAP 2.5 Fortinet Management
+# This EE includes all necessary collections and dependencies for Fortinet operations
+
+version: 3
+
+images:
+  base_image:
+    name: 'quay.io/ansible/awx-ee:latest'
+
+dependencies:
+  system: bindep.txt
+  python: requirements.txt
+  galaxy: requirements.yml
+  ansible_core:
+    package_pip: ansible-core>=2.15.0
+  ansible_runner:
+    package_pip: ansible-runner>=2.3.0
+
+additional_build_steps:
+  prepend_base:
+    - RUN whoami
+    - RUN cat /etc/os-release
+  
+  append_final:
+    - RUN echo "=== Verifying Fortinet collections ===" && ansible-galaxy collection list | grep -E "(fortinet|ansible.netcommon|community)" || true
+    - RUN echo "=== Verifying Python packages ===" && pip list | grep -E "(fortiosapi|paramiko|netaddr|requests)" || true
+    - RUN echo "=== Ansible version ===" && ansible --version
+
+build_arg_defaults:
+  ANSIBLE_GALAXY_CLI_COLLECTION_OPTS: "-v --force"

@@ -24,11 +24,25 @@ This guide provides step-by-step instructions for setting up and using the Forti
 2. Navigate to the Fortinet playbook directory
 3. Build the execution environment:
    ```bash
-   ansible-builder build --tag fortinet-ee:latest .
+   # Quick build using helper script
+   ./build-ee.sh
+   
+   # Or navigate to EE directory for more options
+   cd execution-environment
+   ./build.sh
+   
+   # Or use Make for advanced options
+   cd execution-environment
+   make build
+   make test
    ```
 4. Push to your container registry:
    ```bash
-   podman push fortinet-ee:latest your-registry/fortinet-ee:latest
+   cd execution-environment
+   make push REGISTRY=your-registry.com
+   # Or manually:
+   podman tag fortinet-ee:latest your-registry.com/fortinet-ee:latest
+   podman push your-registry.com/fortinet-ee:latest
    ```
 5. In AAP web console, add the execution environment with your registry URL
 

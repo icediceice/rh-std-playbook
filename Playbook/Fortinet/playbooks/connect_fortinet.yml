@@ -2,6 +2,22 @@
 # AAP 2.5 Optimized Fortinet Connection Playbook
 # Connect to Fortinet VA using AAP credentials and inventory plugins
 
+- name: Ensure Fortinet collection is installed
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Install Fortinet collection if missing
+      ansible.builtin.command:
+        cmd: ansible-galaxy collection install fortinet.fortios:>=2.3.0 --force
+      delegate_to: localhost
+      run_once: true
+      ignore_errors: yes
+      register: collection_install
+
+    - name: Display collection installation result
+      debug:
+        msg: "Collection installation: {{ 'Success' if collection_install.rc == 0 else 'Failed - ensure EE has collection' }}"
+
 - name: Pre-flight checks and AAP credential validation
   hosts: localhost
   gather_facts: false

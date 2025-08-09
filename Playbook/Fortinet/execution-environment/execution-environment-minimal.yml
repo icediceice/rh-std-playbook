@@ -1,0 +1,20 @@
+---
+# Minimal Fortinet Execution Environment for AAP 2.5
+version: 3
+
+images:
+  base_image:
+    name: 'docker.io/alpine:latest'
+
+additional_build_steps:
+  prepend_base:
+    - RUN apk update && apk add --no-cache python3 py3-pip gcc python3-dev musl-dev libffi-dev openssl-dev git
+    - RUN pip3 install --upgrade pip
+    - RUN pip3 install ansible-core>=2.15.0 ansible-runner>=2.3.0 fortiosapi>=1.0.0 netaddr paramiko
+    - RUN ansible-galaxy collection install fortinet.fortios ansible.netcommon ansible.posix
+    - RUN ln -sf /usr/bin/python3 /usr/bin/python
+  
+  append_final:
+    - RUN ansible-galaxy collection list | grep fortinet
+    - RUN pip3 list | grep -E "(ansible|fortiosapi)"
+    - RUN ansible --version

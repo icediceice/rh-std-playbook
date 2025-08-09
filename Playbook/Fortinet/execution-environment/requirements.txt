@@ -1,0 +1,8 @@
+# Python dependencies for AAP 2.5 Fortinet Management
+
+# Fortinet specific requirements
+fortiosapi>=1.0.0
+netaddr>=0.8.0
+
+# Networking requirements
+paramiko>=2.11.0
