@@ -18,19 +18,19 @@
         access_token: "{{ ansible_password | default(fortinet_api_token) }}"
         selector: 'vpn_ipsec'
       register: ike_phase1
-    - name: Show raw VPN data for debugging
-      debug:
-        msg: "Raw VPN data: {{ ike_phase1.meta.results | default('No results') }}"
-        
     - name: Show status for specific VPN
       debug:
         msg: >
           {% set phase1_list = (ike_phase1.meta.results | default([]) | selectattr('name', 'search', vpn_name) | list) %}
           {% if phase1_list %}
             {% set phase1 = phase1_list[0] %}
-            VPN {{ vpn_name }} found - Name: {{ phase1.name | default('Unknown') }}, 
-            State: {{ phase1.state | default('Unknown') }},
-            Proxyid: {{ phase1.proxyid | default('N/A') }}
+            {% set proxy_status = phase1.proxyid[0].status if phase1.proxyid and phase1.proxyid|length > 0 else 'unknown' %}
+            VPN {{ vpn_name }} Phase 1 Status: {{ proxy_status | upper }}
+            - VPN Name: {{ phase1.name }}
+            - Remote Gateway: {{ phase1.rgwy | default('Unknown') }}
+            - Connection Count: {{ phase1.connection_count | default(0) }}
+            - Incoming Bytes: {{ phase1.incoming_bytes | default(0) }}
+            - Outgoing Bytes: {{ phase1.outgoing_bytes | default(0) }}
           {% else %}
-            VPN {{ vpn_name }} not found in results
+            VPN {{ vpn_name }} not found in FortiGate configuration
           {% endif %}
