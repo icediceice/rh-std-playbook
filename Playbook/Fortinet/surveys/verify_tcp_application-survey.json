@@ -1,8 +1,32 @@
 {
   "name": "Verify TCP Application Survey",
-  "description": "Survey for customizing TCP application verification variables (host list is managed separately).",
+  "description": "Survey for TCP port accessibility check from execution environment to target host",
   "questions": [
-    { "variable": "app_host", "type": "text", "question": "Enter application host:", "default": "app.example.com" },
-    { "variable": "app_port", "type": "text", "question": "Enter application port:", "default": "80" }
+    { 
+      "variable": "target_host", 
+      "type": "text", 
+      "question": "Enter target host/IP to check:", 
+      "required": true,
+      "min_length": 1,
+      "max_length": 255
+    },
+    { 
+      "variable": "target_port", 
+      "type": "integer", 
+      "question": "Enter target port number:", 
+      "required": true,
+      "min": 1,
+      "max": 65535,
+      "default": 443
+    },
+    {
+      "variable": "check_timeout",
+      "type": "integer",
+      "question": "Connection timeout in seconds:",
+      "required": false,
+      "min": 1,
+      "max": 60,
+      "default": 10
+    }
   ]
 }

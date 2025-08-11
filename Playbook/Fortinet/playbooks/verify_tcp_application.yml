@@ -1,20 +1,29 @@
 ---
 - name: Verify Application over TCP/IP
-  hosts: "{{ target_hosts }}"
+  hosts: localhost
   gather_facts: no
   become: no
   vars:
-    app_host: "{{ app_host | default('app.example.com') }}"
-    app_port: "{{ app_port | default('80') }}"
+    target_host: "{{ target_host | mandatory }}"
+    target_port: "{{ target_port | mandatory }}"
+    check_timeout: "{{ check_timeout | default(10) }}"
   tasks:
-    - name: Check TCP port
+    - name: Check TCP port accessibility from execution environment
       ansible.builtin.wait_for:
-        host: "{{ app_host }}"
-        port: "{{ app_port }}"
+        host: "{{ target_host }}"
+        port: "{{ target_port }}"
         state: started
-        timeout: 10
+        timeout: "{{ check_timeout }}"
+        msg: "Port {{ target_port }} on {{ target_host }} is not accessible"
       register: tcp_check
-      delegate_to: localhost
-    - name: Show TCP check result
-      debug:
-        var: tcp_check
+      failed_when: false
+
+    - name: Report success if port is accessible
+      ansible.builtin.debug:
+        msg: "SUCCESS: Port {{ target_port }} on {{ target_host }} is accessible"
+      when: tcp_check.elapsed is defined
+
+    - name: Fail if port is not accessible
+      ansible.builtin.fail:
+        msg: "FAILED: Port {{ target_port }} on {{ target_host }} is not accessible after {{ check_timeout }} seconds"
+      when: tcp_check.elapsed is not defined
