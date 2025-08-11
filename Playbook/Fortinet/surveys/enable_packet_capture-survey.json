@@ -2,6 +2,20 @@
   "name": "Enable Packet Capture Survey",
   "description": "Survey for configuring packet capture on Fortinet device interfaces",
   "questions": [
+    {
+      "variable": "target_hosts",
+      "type": "multiplechoice",
+      "question": "Select target Fortinet devices:",
+      "choices": [
+        "fw-prod-01",
+        "fw-prod-02", 
+        "fw-staging-01",
+        "fw-target-01",
+        "fortinet"
+      ],
+      "default": "fw-target-01",
+      "required": true
+    },
     { 
       "variable": "interface_name", 
       "type": "text", 
@@ -13,14 +27,14 @@
       "variable": "capture_filter", 
       "type": "text", 
       "question": "Enter capture filter (e.g., 'host 192.168.1.1' or 'port 443'):", 
-      "default": "",
+      "default": "host any",
       "required": false
     },
     { 
       "variable": "capture_count", 
       "type": "integer", 
       "question": "Maximum number of packets to capture:", 
-      "default": 100,
+      "default": 50,
       "min": 1,
       "max": 10000,
       "required": false
@@ -29,7 +43,7 @@
       "variable": "capture_timeout", 
       "type": "integer", 
       "question": "Capture timeout in seconds:", 
-      "default": 10,
+      "default": 30,
       "min": 1,
       "max": 300,
       "required": false

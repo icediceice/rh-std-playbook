@@ -9,13 +9,14 @@
     ansible_httpapi_use_ssl: true
     ansible_httpapi_validate_certs: false
     ansible_httpapi_port: 443
+    # Sensible defaults that work with minimal input
     default_interface_name: any
-    default_capture_filter: ''
-    default_capture_count: 100
-    default_capture_timeout: 10
+    default_capture_filter: 'host any'
+    default_capture_count: 50
+    default_capture_timeout: 30
     default_vdom: root
     default_send_email: ''
-    email_subject: "{{ email_subject | default('Fortinet Packet Capture Report - ' + inventory_hostname) }}"
+    default_email_subject: "Fortinet Packet Capture Report - {{ inventory_hostname }}"
   tasks:
     - name: Set timestamp facts manually (since gather_facts is disabled)
       set_fact:
@@ -123,7 +124,7 @@
     - name: Send email notification with capture results
       community.general.mail:
         to: "{{ send_email | default(default_send_email) }}"
-        subject: "{{ email_subject }}"
+        subject: "{{ email_subject | default(default_email_subject) }}"
         body: |
           Fortinet Packet Capture Report
           ===============================
