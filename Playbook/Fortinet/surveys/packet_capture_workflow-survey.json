@@ -1,0 +1,77 @@
+{
+  "name": "Packet Capture Workflow Survey",
+  "description": "Complete packet capture workflow with analysis and email notification",
+  "questions": [
+    {
+      "variable": "interface_name",
+      "type": "text",
+      "question": "Interface name (use 'any' for all):",
+      "default": "any",
+      "required": false,
+      "min_length": 1,
+      "max_length": 50
+    },
+    {
+      "variable": "capture_filter",
+      "type": "text",
+      "question": "Capture filter (e.g., 'host 192.168.1.1 and port 443'):",
+      "default": "",
+      "required": false,
+      "min_length": 0,
+      "max_length": 255
+    },
+    {
+      "variable": "capture_count",
+      "type": "integer",
+      "question": "Maximum packets to capture:",
+      "default": 100,
+      "min": 1,
+      "max": 10000,
+      "required": false
+    },
+    {
+      "variable": "capture_timeout",
+      "type": "integer",
+      "question": "Capture timeout (seconds):",
+      "default": 10,
+      "min": 1,
+      "max": 300,
+      "required": false
+    },
+    {
+      "variable": "vdom",
+      "type": "text",
+      "question": "VDOM name:",
+      "default": "root",
+      "required": false,
+      "min_length": 1,
+      "max_length": 50
+    },
+    {
+      "variable": "auto_analyze",
+      "type": "multiplechoice",
+      "question": "Perform automatic analysis?",
+      "choices": ["true", "false"],
+      "default": "true",
+      "required": false
+    },
+    {
+      "variable": "send_email",
+      "type": "text",
+      "question": "Email for report (leave blank to skip):",
+      "default": "",
+      "required": false,
+      "min_length": 0,
+      "max_length": 255
+    },
+    {
+      "variable": "email_subject",
+      "type": "text",
+      "question": "Custom email subject (optional):",
+      "default": "",
+      "required": false,
+      "min_length": 0,
+      "max_length": 255
+    }
+  ]
+}

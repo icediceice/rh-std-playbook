@@ -1,0 +1,140 @@
+---
+- name: Analyze and Send Packet Capture Results
+  hosts: localhost
+  gather_facts: yes
+  become: no
+  vars:
+    send_to_email: "{{ send_to_email | default('') }}"
+    analysis_type: "{{ analysis_type | default('summary') }}"
+    # In AAP workflows, this would receive data from previous job
+    previous_capture_data: "{{ fortinet_packet_capture | default({}) }}"
+  tasks:
+    - name: Check if capture data exists from previous job
+      set_fact:
+        has_capture_data: "{{ previous_capture_data != {} }}"
+        
+    - name: Display received capture data
+      debug:
+        msg: |
+          Checking for packet capture data from previous job:
+          {% if has_capture_data %}
+          ✓ Found capture data from {{ previous_capture_data.timestamp | default('unknown time') }}
+          {% else %}
+          ✗ No capture data found. This playbook should be run in a workflow after the packet capture playbook.
+          {% endif %}
+
+    - name: Parse capture data if available
+      set_fact:
+        capture_summary:
+          hostname: "{{ previous_capture_data.hostname | default('unknown') }}"
+          interface: "{{ previous_capture_data.interface | default('unknown') }}"
+          filter: "{{ previous_capture_data.filter | default('none') }}"
+          timestamp: "{{ previous_capture_data.timestamp | default('unknown') }}"
+          status: "{{ previous_capture_data.status | default('unknown') }}"
+          vdom: "{{ previous_capture_data.vdom | default('root') }}"
+          capture_output: "{{ previous_capture_data.capture_output | default('No data available') }}"
+      when: has_capture_data
+
+    - name: Analyze capture data for common patterns
+      set_fact:
+        packet_analysis:
+          has_traffic: "{{ (capture_summary.capture_output | default('') | length) > 50 }}"
+          contains_errors: "{{ 'error' in (capture_summary.capture_output | default('') | lower) }}"
+          contains_drops: "{{ 'drop' in (capture_summary.capture_output | default('') | lower) }}"
+          contains_reset: "{{ 'RST' in (capture_summary.capture_output | default('')) }}"
+          packet_count_analyzed: "{{ capture_summary.capture_output | default('') | regex_findall('\n') | length }}"
+      when: has_capture_data
+
+    - name: Generate analysis summary
+      set_fact:
+        analysis_results:
+          status: "{{ 'analyzed' if has_capture_data else 'no_data' }}"
+          timestamp: "{{ ansible_date_time.iso8601 }}"
+          original_capture_time: "{{ capture_summary.timestamp | default('unknown') }}"
+          hostname: "{{ capture_summary.hostname | default('unknown') }}"
+          interface: "{{ capture_summary.interface | default('unknown') }}"
+          filter: "{{ capture_summary.filter | default('none') }}"
+          traffic_detected: "{{ packet_analysis.has_traffic | default(false) }}"
+          errors_found: "{{ packet_analysis.contains_errors | default(false) }}"
+          drops_found: "{{ packet_analysis.contains_drops | default(false) }}"
+          tcp_resets_found: "{{ packet_analysis.contains_reset | default(false) }}"
+          lines_analyzed: "{{ packet_analysis.packet_count_analyzed | default(0) }}"
+      when: has_capture_data
+
+    - name: Store analysis results in AAP artifacts
+      set_stats:
+        data:
+          fortinet_capture_analysis:
+            analysis_timestamp: "{{ ansible_date_time.iso8601 }}"
+            original_capture: "{{ capture_summary | default({}) }}"
+            analysis_results: "{{ analysis_results | default({}) }}"
+            recommendations: |
+              {% if packet_analysis.contains_errors | default(false) %}
+              - Errors detected in packet capture. Review for transmission issues.
+              {% endif %}
+              {% if packet_analysis.contains_drops | default(false) %}
+              - Packet drops detected. Check interface buffer and bandwidth.
+              {% endif %}
+              {% if packet_analysis.contains_reset | default(false) %}
+              - TCP resets found. Investigate connection stability.
+              {% endif %}
+              {% if not packet_analysis.has_traffic | default(false) %}
+              - No significant traffic captured. Verify filter and interface selection.
+              {% endif %}
+        per_host: false
+        aggregate: true
+      when: has_capture_data
+
+    - name: Display analysis results
+      debug:
+        msg: |
+          Packet Capture Analysis Complete
+          =================================
+          {% if has_capture_data %}
+          ✓ Analysis completed for capture from {{ capture_summary.timestamp }}
+          
+          Summary:
+          - Host: {{ capture_summary.hostname }}
+          - Interface: {{ capture_summary.interface }}
+          - Filter: {{ capture_summary.filter }}
+          
+          Analysis Results:
+          - Traffic Detected: {{ 'Yes' if packet_analysis.has_traffic else 'No' }}
+          - Errors Found: {{ 'Yes' if packet_analysis.contains_errors else 'No' }}
+          - Drops Found: {{ 'Yes' if packet_analysis.contains_drops else 'No' }}
+          - TCP Resets: {{ 'Yes' if packet_analysis.contains_reset else 'No' }}
+          - Lines Analyzed: {{ packet_analysis.packet_count_analyzed }}
+          
+          {% if analysis_type == 'detailed' %}
+          Detailed Output:
+          {{ capture_summary.capture_output | default('No output available') | truncate(2000) }}
+          {% endif %}
+          {% else %}
+          ✗ No capture data found
+          - This playbook should be run in an AAP workflow after the packet capture playbook
+          - Or set the 'fortinet_packet_capture' variable with capture data
+          {% endif %}
+
+    - name: Create notification message if email configured
+      mail:
+        to: "{{ send_to_email }}"
+        subject: "Fortinet Packet Capture Analysis - {{ capture_summary.hostname | default('Unknown Host') }}"
+        body: |
+          Packet Capture Analysis Report
+          
+          Capture Details:
+          - Host: {{ capture_summary.hostname | default('unknown') }}
+          - Interface: {{ capture_summary.interface | default('unknown') }}
+          - Time: {{ capture_summary.timestamp | default('unknown') }}
+          
+          Analysis Results:
+          - Traffic Detected: {{ 'Yes' if packet_analysis.has_traffic else 'No' }}
+          - Errors: {{ 'Found' if packet_analysis.contains_errors else 'None' }}
+          - Drops: {{ 'Found' if packet_analysis.contains_drops else 'None' }}
+          - TCP Resets: {{ 'Found' if packet_analysis.contains_reset else 'None' }}
+          
+          Generated by Ansible Automation Platform
+      when:
+        - has_capture_data
+        - send_to_email | length > 0
+      ignore_errors: yes

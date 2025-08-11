@@ -1,7 +1,7 @@
 ---
 - name: Enable Packet Capture on Fortinet VA
   hosts: "{{ target_hosts }}"
-  gather_facts: no
+  gather_facts: yes
   connection: httpapi
   become: no
   vars:
@@ -9,34 +9,164 @@
     ansible_httpapi_use_ssl: true
     ansible_httpapi_validate_certs: false
     ansible_httpapi_port: 443
-    vpn_name: "{{ vpn_name | default('vpn1') }}"
-    filter: "{{ capture_filter | default('') }}"
+    interface_name: "{{ interface_name | default('any') }}"
+    capture_filter: "{{ capture_filter | default('') }}"
+    capture_count: "{{ capture_count | default(100) }}"
+    capture_timeout: "{{ capture_timeout | default(10) }}"
     vdom: "{{ vdom | default('root') }}"
+    send_email: "{{ send_email | default('') }}"
+    email_subject: "{{ email_subject | default('Fortinet Packet Capture Report - ' + inventory_hostname) }}"
   tasks:
-    - name: Get VPN Phase 2 interfaces for the VPN
-      fortinet.fortios.fortios_monitor_fact:
-        vdom: "{{ vdom }}"
-        selector: 'vpn_ipsec_stats_crypto'
-        access_token: "{{ ansible_password | default(fortinet_api_token) }}"
-      register: vpn_phase2
-
-    - name: Set list of interfaces related to the VPN
-      set_fact:
-        vpn_interfaces: >-
-          {{ vpn_phase2.meta.results | selectattr('name', 'search', vpn_name) | map(attribute='interface') | list | unique }}
-
-    - name: Start packet capture on each related interface
-      fortinet.fortios.fortios_system_sniffer:
-        state: "present"
+    - name: Execute packet capture diagnostic command
+      fortinet.fortios.fortios_monitor:
         vdom: "{{ vdom }}"
         access_token: "{{ ansible_password | default(fortinet_api_token) }}"
-        system_sniffer:
-          name: "capture_{{ item }}_{{ ansible_date_time.epoch }}"
-          interface: "{{ item }}"
-          host: "{{ filter }}"
-      loop: "{{ vpn_interfaces }}"
+        enable_log: false
+        monitor_selector: cli_cmdb
+        monitor_params:
+          command: >-
+            diagnose sniffer packet {{ interface_name }}
+            "{{ capture_filter }}"
+            4 {{ capture_count }} l
+            {{ capture_timeout }}
       register: capture_result
+      ignore_errors: yes
 
-    - name: Show packet capture result
+    - name: Process capture output
+      set_fact:
+        capture_output: "{{ capture_result.meta.output | default('No capture data available') }}"
+        capture_timestamp: "{{ ansible_date_time.iso8601 }}"
+        capture_epoch: "{{ ansible_date_time.epoch }}"
+      when: capture_result is not failed
+
+    - name: Store capture data in AAP artifacts using set_stats
+      set_stats:
+        data:
+          fortinet_packet_capture:
+            status: "{{ 'success' if capture_result is not failed else 'failed' }}"
+            hostname: "{{ inventory_hostname }}"
+            interface: "{{ interface_name }}"
+            filter: "{{ capture_filter | default('none') }}"
+            timestamp: "{{ capture_timestamp | default(ansible_date_time.iso8601) }}"
+            capture_epoch: "{{ capture_epoch | default(ansible_date_time.epoch) }}"
+            vdom: "{{ vdom }}"
+            packet_count: "{{ capture_count }}"
+            capture_output: "{{ capture_output | default('No data') }}"
+            capture_result_meta: "{{ capture_result.meta | default({}) | to_json }}"
+        per_host: false
+        aggregate: true
+      when: capture_result is defined
+
+    - name: Display capture result
       debug:
-        var: capture_result
+        msg: |
+          Packet Capture Status:
+          {% if capture_result is not failed %}
+          ✓ Capture completed successfully
+          - Interface: {{ interface_name }}
+          - Filter: {{ capture_filter | default('none') }}
+          - Max packets: {{ capture_count }}
+          - Timestamp: {{ capture_timestamp | default('N/A') }}
+          
+          Data stored in AAP artifacts (accessible via API or in subsequent workflow jobs)
+          {% else %}
+          ✗ Failed to initiate capture, check parameters
+          {% endif %}
+
+    - name: Create artifact for AAP UI display
+      set_fact:
+        ansible_facts:
+          artifacts:
+            packet_capture_report: |
+              ================================
+              Packet Capture Report
+              ================================
+              Host: {{ inventory_hostname }}
+              Interface: {{ interface_name }}
+              Filter: {{ capture_filter | default('none') }}
+              VDOM: {{ vdom }}
+              Timestamp: {{ capture_timestamp | default(ansible_date_time.iso8601) }}
+              Status: {{ 'SUCCESS' if capture_result is not failed else 'FAILED' }}
+              
+              Capture Output:
+              ---------------
+              {{ capture_output | default('No capture data available') | truncate(5000) }}
+      when: capture_result is defined
+      
+    - name: Also set custom fact for workflow access
+      set_fact:
+        packet_capture_data:
+          status: "{{ 'success' if capture_result is not failed else 'failed' }}"
+          hostname: "{{ inventory_hostname }}"
+          interface: "{{ interface_name }}"
+          filter: "{{ capture_filter | default('none') }}"
+          timestamp: "{{ capture_timestamp | default(ansible_date_time.iso8601) }}"
+          output: "{{ capture_output | default('No data') }}"
+      cacheable: yes
+
+    - name: Analyze capture for quick insights
+      set_fact:
+        capture_analysis:
+          total_lines: "{{ capture_output | default('') | regex_findall('\\n') | length }}"
+          has_traffic: "{{ (capture_output | default('') | length) > 100 }}"
+          contains_errors: "{{ 'error' in (capture_output | default('') | lower) or 'fail' in (capture_output | default('') | lower) }}"
+          contains_timeouts: "{{ 'timeout' in (capture_output | default('') | lower) }}"
+          contains_resets: "{{ 'RST' in capture_output | default('') }}"
+      when: capture_result is not failed
+
+    - name: Send email notification with capture results
+      mail:
+        to: "{{ send_email }}"
+        subject: "{{ email_subject }}"
+        body: |
+          Fortinet Packet Capture Report
+          ===============================
+          
+          Capture Details:
+          ----------------
+          Host: {{ inventory_hostname }}
+          Interface: {{ interface_name }}
+          Filter: {{ capture_filter | default('none') }}
+          VDOM: {{ vdom }}
+          Timestamp: {{ capture_timestamp | default(ansible_date_time.iso8601) }}
+          Status: {{ 'SUCCESS' if capture_result is not failed else 'FAILED' }}
+          
+          Capture Statistics:
+          -------------------
+          - Total Lines Captured: {{ capture_analysis.total_lines | default(0) }}
+          - Traffic Detected: {{ 'Yes' if capture_analysis.has_traffic | default(false) else 'No' }}
+          - Errors/Failures Found: {{ 'Yes' if capture_analysis.contains_errors | default(false) else 'No' }}
+          - Timeouts Detected: {{ 'Yes' if capture_analysis.contains_timeouts | default(false) else 'No' }}
+          - TCP Resets Found: {{ 'Yes' if capture_analysis.contains_resets | default(false) else 'No' }}
+          
+          Quick Analysis:
+          ---------------
+          {% if capture_analysis.contains_errors | default(false) %}
+          ⚠ WARNING: Errors or failures detected in capture
+          {% endif %}
+          {% if capture_analysis.contains_timeouts | default(false) %}
+          ⚠ WARNING: Timeouts detected - possible connectivity issues
+          {% endif %}
+          {% if capture_analysis.contains_resets | default(false) %}
+          ⚠ WARNING: TCP resets detected - connection interruptions
+          {% endif %}
+          {% if not capture_analysis.has_traffic | default(false) %}
+          ℹ INFO: No significant traffic captured - verify filter and interface
+          {% endif %}
+          
+          Capture Output (First 100 lines):
+          ----------------------------------
+          {{ capture_output | default('No capture data available') | regex_replace('.*\\n', '', 100) | default(capture_output | default('No data')) | truncate(4000) }}
+          
+          ===============================
+          Generated by Ansible Automation Platform
+          Job ID: {{ tower_job_id | default('N/A') }}
+          Job Template: {{ tower_job_template_name | default('N/A') }}
+          
+          For full capture details, access the AAP job artifacts via:
+          {{ tower_host | default('https://your-aap-server') }}/api/v2/jobs/{{ tower_job_id | default('job-id') }}/artifacts/
+      when:
+        - send_email | length > 0
+        - capture_result is defined
+      ignore_errors: yes
+      delegate_to: localhost

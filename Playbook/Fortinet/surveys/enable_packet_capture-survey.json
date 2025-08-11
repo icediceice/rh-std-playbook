@@ -1,9 +1,63 @@
 {
   "name": "Enable Packet Capture Survey",
-  "description": "Survey for customizing packet capture variables (host list is managed separately, interfaces are auto-detected from VPN name).",
+  "description": "Survey for configuring packet capture on Fortinet device interfaces",
   "questions": [
-    { "variable": "vpn_name", "type": "text", "question": "Enter VPN name to capture packets for:", "default": "vpn1" },
-    { "variable": "capture_filter", "type": "text", "question": "Enter capture filter (optional):", "default": "" },
-    { "variable": "vdom", "type": "text", "question": "Enter VDOM name:", "default": "root" }
+    { 
+      "variable": "interface_name", 
+      "type": "text", 
+      "question": "Enter interface name (use 'any' for all interfaces):", 
+      "default": "any",
+      "required": false
+    },
+    { 
+      "variable": "capture_filter", 
+      "type": "text", 
+      "question": "Enter capture filter (e.g., 'host 192.168.1.1' or 'port 443'):", 
+      "default": "",
+      "required": false
+    },
+    { 
+      "variable": "capture_count", 
+      "type": "integer", 
+      "question": "Maximum number of packets to capture:", 
+      "default": 100,
+      "min": 1,
+      "max": 10000,
+      "required": false
+    },
+    { 
+      "variable": "capture_timeout", 
+      "type": "integer", 
+      "question": "Capture timeout in seconds:", 
+      "default": 10,
+      "min": 1,
+      "max": 300,
+      "required": false
+    },
+    { 
+      "variable": "vdom", 
+      "type": "text", 
+      "question": "Enter VDOM name:", 
+      "default": "root",
+      "required": false
+    },
+    {
+      "variable": "send_email",
+      "type": "text",
+      "question": "Email address for capture report (leave blank to skip):",
+      "default": "",
+      "required": false,
+      "min_length": 0,
+      "max_length": 255
+    },
+    {
+      "variable": "email_subject",
+      "type": "text",
+      "question": "Email subject (optional):",
+      "default": "",
+      "required": false,
+      "min_length": 0,
+      "max_length": 255
+    }
   ]
 }

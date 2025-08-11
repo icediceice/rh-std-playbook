@@ -1,0 +1,214 @@
+---
+- name: Fortinet Packet Capture and Email Workflow
+  hosts: "{{ target_hosts }}"
+  gather_facts: yes
+  connection: httpapi
+  become: no
+  vars:
+    ansible_network_os: fortinet.fortios.fortios
+    ansible_httpapi_use_ssl: true
+    ansible_httpapi_validate_certs: false
+    ansible_httpapi_port: 443
+    interface_name: "{{ interface_name | default('any') }}"
+    capture_filter: "{{ capture_filter | default('') }}"
+    capture_count: "{{ capture_count | default(100) }}"
+    capture_timeout: "{{ capture_timeout | default(10) }}"
+    vdom: "{{ vdom | default('root') }}"
+    send_email: "{{ send_email | default('') }}"
+    email_subject: "{{ email_subject | default('Fortinet Packet Capture - ' + inventory_hostname + ' - ' + ansible_date_time.date) }}"
+    auto_analyze: "{{ auto_analyze | default(true) }}"
+    
+  tasks:
+    # Phase 1: Execute Packet Capture
+    - name: Execute packet capture diagnostic command
+      fortinet.fortios.fortios_monitor:
+        vdom: "{{ vdom }}"
+        access_token: "{{ ansible_password | default(fortinet_api_token) }}"
+        enable_log: false
+        monitor_selector: cli_cmdb
+        monitor_params:
+          command: >-
+            diagnose sniffer packet {{ interface_name }}
+            "{{ capture_filter }}"
+            4 {{ capture_count }} l
+            {{ capture_timeout }}
+      register: capture_result
+      ignore_errors: yes
+
+    - name: Process capture output
+      set_fact:
+        capture_output: "{{ capture_result.meta.output | default('No capture data available') }}"
+        capture_timestamp: "{{ ansible_date_time.iso8601 }}"
+        capture_status: "{{ 'success' if capture_result is not failed else 'failed' }}"
+
+    # Phase 2: Analyze Capture Data
+    - name: Perform detailed capture analysis
+      set_fact:
+        capture_analysis:
+          # Basic metrics
+          total_lines: "{{ capture_output | regex_findall('\\n') | length }}"
+          output_size: "{{ capture_output | length }}"
+          has_traffic: "{{ (capture_output | length) > 100 }}"
+          
+          # Protocol analysis
+          tcp_packets: "{{ capture_output | regex_findall('TCP') | length }}"
+          udp_packets: "{{ capture_output | regex_findall('UDP') | length }}"
+          icmp_packets: "{{ capture_output | regex_findall('ICMP') | length }}"
+          
+          # Issue detection
+          contains_errors: "{{ 'error' in (capture_output | lower) or 'fail' in (capture_output | lower) }}"
+          contains_timeouts: "{{ 'timeout' in (capture_output | lower) }}"
+          contains_resets: "{{ 'RST' in capture_output }}"
+          contains_retransmissions: "{{ 'retrans' in (capture_output | lower) }}"
+          
+          # Connection analysis
+          syn_packets: "{{ capture_output | regex_findall('SYN') | length }}"
+          ack_packets: "{{ capture_output | regex_findall('ACK') | length }}"
+          fin_packets: "{{ capture_output | regex_findall('FIN') | length }}"
+      when: 
+        - auto_analyze | bool
+        - capture_result is not failed
+
+    - name: Generate analysis summary
+      set_fact:
+        analysis_summary:
+          status: "{{ capture_status }}"
+          timestamp: "{{ capture_timestamp }}"
+          host: "{{ inventory_hostname }}"
+          interface: "{{ interface_name }}"
+          filter: "{{ capture_filter | default('none') }}"
+          vdom: "{{ vdom }}"
+          metrics:
+            total_lines: "{{ capture_analysis.total_lines | default(0) }}"
+            tcp_packets: "{{ capture_analysis.tcp_packets | default(0) }}"
+            udp_packets: "{{ capture_analysis.udp_packets | default(0) }}"
+            icmp_packets: "{{ capture_analysis.icmp_packets | default(0) }}"
+          issues_detected:
+            errors: "{{ capture_analysis.contains_errors | default(false) }}"
+            timeouts: "{{ capture_analysis.contains_timeouts | default(false) }}"
+            resets: "{{ capture_analysis.contains_resets | default(false) }}"
+            retransmissions: "{{ capture_analysis.contains_retransmissions | default(false) }}"
+          recommendations: >-
+            {% set recs = [] %}
+            {% if capture_analysis.contains_errors | default(false) %}
+              {% set _ = recs.append('Review error messages for root cause') %}
+            {% endif %}
+            {% if capture_analysis.contains_timeouts | default(false) %}
+              {% set _ = recs.append('Check network latency and firewall rules') %}
+            {% endif %}
+            {% if capture_analysis.contains_resets | default(false) %}
+              {% set _ = recs.append('Investigate TCP connection stability') %}
+            {% endif %}
+            {% if capture_analysis.contains_retransmissions | default(false) %}
+              {% set _ = recs.append('Check for packet loss or network congestion') %}
+            {% endif %}
+            {% if not capture_analysis.has_traffic | default(false) %}
+              {% set _ = recs.append('No traffic captured - verify filter and interface selection') %}
+            {% endif %}
+            {{ recs | join(', ') if recs else 'No issues detected' }}
+      when: auto_analyze | bool
+
+    # Phase 3: Store Results in AAP
+    - name: Store complete workflow data in AAP artifacts
+      set_stats:
+        data:
+          fortinet_capture_workflow:
+            capture_data:
+              status: "{{ capture_status }}"
+              hostname: "{{ inventory_hostname }}"
+              interface: "{{ interface_name }}"
+              filter: "{{ capture_filter | default('none') }}"
+              timestamp: "{{ capture_timestamp }}"
+              vdom: "{{ vdom }}"
+              output: "{{ capture_output | truncate(10000) }}"
+            analysis: "{{ analysis_summary | default({}) }}"
+            email_sent: "{{ (send_email | length > 0) | bool }}"
+            email_recipient: "{{ send_email | default('none') }}"
+        per_host: false
+        aggregate: true
+
+    # Phase 4: Send Email Notification
+    - name: Send comprehensive email report
+      mail:
+        to: "{{ send_email }}"
+        subject: "{{ email_subject }}"
+        body: |
+          ============================================
+          FORTINET PACKET CAPTURE ANALYSIS REPORT
+          ============================================
+          
+          CAPTURE INFORMATION
+          -------------------
+          Host: {{ inventory_hostname }}
+          Interface: {{ interface_name }}
+          Filter: {{ capture_filter | default('none') }}
+          VDOM: {{ vdom }}
+          Timestamp: {{ capture_timestamp }}
+          Status: {{ capture_status | upper }}
+          
+          {% if auto_analyze and analysis_summary is defined %}
+          TRAFFIC ANALYSIS
+          ----------------
+          Total Lines Captured: {{ analysis_summary.metrics.total_lines }}
+          Protocol Distribution:
+            - TCP Packets: {{ analysis_summary.metrics.tcp_packets }}
+            - UDP Packets: {{ analysis_summary.metrics.udp_packets }}
+            - ICMP Packets: {{ analysis_summary.metrics.icmp_packets }}
+          
+          ISSUE DETECTION
+          ---------------
+          {% if analysis_summary.issues_detected.errors %}✗ Errors/Failures Detected{% else %}✓ No Errors Detected{% endif %}
+          {% if analysis_summary.issues_detected.timeouts %}✗ Timeouts Detected{% else %}✓ No Timeouts{% endif %}
+          {% if analysis_summary.issues_detected.resets %}✗ TCP Resets Found{% else %}✓ No TCP Resets{% endif %}
+          {% if analysis_summary.issues_detected.retransmissions %}✗ Retransmissions Detected{% else %}✓ No Retransmissions{% endif %}
+          
+          RECOMMENDATIONS
+          ---------------
+          {{ analysis_summary.recommendations }}
+          {% endif %}
+          
+          CAPTURE OUTPUT SAMPLE
+          ---------------------
+          {{ capture_output | truncate(3000) }}
+          
+          ============================================
+          AUTOMATION DETAILS
+          ============================================
+          AAP Job ID: {{ tower_job_id | default('N/A') }}
+          Job Template: {{ tower_job_template_name | default('N/A') }}
+          Workflow: {{ tower_workflow_job_name | default('N/A') }}
+          Executed By: {{ tower_user_name | default('N/A') }}
+          
+          Full capture data available in AAP job artifacts:
+          {{ tower_host | default('https://your-aap-server') }}/#/jobs/workflow/{{ tower_workflow_job_id | default(tower_job_id) }}
+          
+          ============================================
+          Generated: {{ ansible_date_time.iso8601 }}
+          Ansible Automation Platform
+      when:
+        - send_email | length > 0
+      ignore_errors: yes
+      delegate_to: localhost
+
+    # Phase 5: Final Summary
+    - name: Display workflow completion summary
+      debug:
+        msg: |
+          ========================================
+          PACKET CAPTURE WORKFLOW COMPLETE
+          ========================================
+          ✓ Capture Status: {{ capture_status | upper }}
+          ✓ Host: {{ inventory_hostname }}
+          ✓ Interface: {{ interface_name }}
+          {% if auto_analyze and analysis_summary is defined %}
+          ✓ Analysis: Complete
+            - Total Packets: {{ analysis_summary.metrics.total_lines }}
+            - Issues Found: {{ analysis_summary.issues_detected | select | list | length }}
+          {% endif %}
+          {% if send_email | length > 0 %}
+          ✓ Email Report: Sent to {{ send_email }}
+          {% else %}
+          ℹ Email Report: Not configured
+          {% endif %}
+          ✓ Data stored in AAP artifacts
+          ========================================

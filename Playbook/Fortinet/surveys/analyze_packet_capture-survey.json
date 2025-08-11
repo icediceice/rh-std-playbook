@@ -1,0 +1,21 @@
+{
+  "name": "Analyze Packet Capture Survey",
+  "description": "Survey for analyzing packet capture data from previous job in workflow",
+  "questions": [
+    { 
+      "variable": "analysis_type", 
+      "type": "multiplechoice", 
+      "question": "Type of analysis to perform:", 
+      "choices": ["summary", "detailed"],
+      "default": "summary",
+      "required": false
+    },
+    { 
+      "variable": "send_to_email", 
+      "type": "text", 
+      "question": "Email address for report (optional):", 
+      "default": "",
+      "required": false
+    }
+  ]
+}
