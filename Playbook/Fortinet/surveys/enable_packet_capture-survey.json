@@ -72,6 +72,29 @@
       "required": false,
       "min_length": 0,
       "max_length": 255
+    },
+    {
+      "variable": "smtp_host",
+      "type": "text",
+      "question": "SMTP server hostname (for email notifications):",
+      "default": "localhost",
+      "required": false
+    },
+    {
+      "variable": "smtp_port",
+      "type": "integer",
+      "question": "SMTP server port:",
+      "default": 25,
+      "min": 1,
+      "max": 65535,
+      "required": false
+    },
+    {
+      "variable": "smtp_from",
+      "type": "text",
+      "question": "Email sender address:",
+      "default": "ansible@company.com",
+      "required": false
     }
   ]
 }
