@@ -1,0 +1,25 @@
+# Extend the existing Fortinet EE image with community.general collection
+# This is a quick patch to add the missing collection without rebuilding everything
+
+# Use your existing image as the base
+FROM quay.io/icediceice/execution/fortinet-ee:latest
+
+# Switch to root user to install collections
+USER root
+
+# Add the missing community.general collection
+RUN ansible-galaxy collection install community.general:>=8.0.0 --force
+
+# Verify the collection is installed
+RUN echo "=== Verifying community.general collection ===" && \
+    ansible-galaxy collection list | grep community.general && \
+    echo "=== Testing mail module availability ===" && \
+    ansible-doc community.general.mail > /dev/null 2>&1 && \
+    echo "Mail module is available"
+
+# Switch back to the default user (usually 1000)
+USER 1000
+
+# Add a label to track this modification
+LABEL fortinet.ee.patch="community.general-mail-module" \
+      fortinet.ee.patch.date="2025-08-11"

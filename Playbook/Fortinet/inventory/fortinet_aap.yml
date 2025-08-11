@@ -32,6 +32,15 @@ all:
           vdom: root
           device_model: FortiGate-60F
           
+        # Additional Fortinet device
+        fw-target-01:
+          ansible_host: 172.28.7.58
+          device_type: firewall
+          environment: dev
+          location: lab
+          vdom: root
+          device_model: FortiGate
+          
       vars:
         # Connection settings for all Fortinet devices
         ansible_connection: httpapi

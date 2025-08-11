@@ -16,8 +16,10 @@
       "Bash(ansible-builder build:*)",
       "Bash(podman:*)",
       "Bash(timeout 300 ansible-builder build:*)",
-      "Bash(ansible-playbook:*)"
+      "Bash(ansible-playbook:*)",
+      "Bash(echo $HOME)"
     ],
     "deny": []
-  }
+  },
+  "model": "sonnet"
 }
