@@ -29,13 +29,12 @@
         vdom: "{{ vdom | default(default_vdom) }}"
         access_token: "{{ ansible_password | default(fortinet_api_token) }}"
         enable_log: false
-        monitor_selector: cli_cmdb
-        monitor_params:
-          command: >-
-            diagnose sniffer packet {{ interface_name | default(default_interface_name) }}
-            "{{ capture_filter | default(default_capture_filter) }}"
-            4 {{ capture_count | default(default_capture_count) }} l
-            {{ capture_timeout | default(default_capture_timeout) }}
+        selector: diagnose_system_sniffer_packet
+        params:
+          interface: "{{ interface_name | default(default_interface_name) }}"
+          filter: "{{ capture_filter | default(default_capture_filter) }}"
+          count: "{{ capture_count | default(default_capture_count) }}"
+          timeout: "{{ capture_timeout | default(default_capture_timeout) }}"
       register: capture_result
       ignore_errors: yes
 
