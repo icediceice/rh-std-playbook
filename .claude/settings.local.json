@@ -15,7 +15,8 @@
       "Bash(pip install:*)",
       "Bash(ansible-builder build:*)",
       "Bash(podman:*)",
-      "Bash(timeout 300 ansible-builder build:*)"
+      "Bash(timeout 300 ansible-builder build:*)",
+      "Bash(ansible-playbook:*)"
     ],
     "deny": []
   }

@@ -102,7 +102,7 @@
           filter: "{{ capture_filter | default('none') }}"
           timestamp: "{{ capture_timestamp | default(ansible_date_time.iso8601) }}"
           output: "{{ capture_output | default('No data') }}"
-      cacheable: yes
+        cacheable: yes
 
     - name: Analyze capture for quick insights
       set_fact:
