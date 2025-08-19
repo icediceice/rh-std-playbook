@@ -1,0 +1,51 @@
+#########################################################################################
+# Description   :       For check space usage on host that over limit exceed.
+# Create Date   :       26 may 2007
+# Last Update   :       26 Feb 2012 By Sitthisak
+# Last Update   :       9 Jun 2025 By Sitthisak,Thanawan
+#########################################################################################
+export NS_ORDER=local
+LOG=/bigc/log/bgccheckspace.log
+LOGerr=/bigc/log/bgccheckspace.err`date +%Y%m%d`
+
+for i in `cat /bigc/script/checkspace.cfg`
+do
+        n1=$(echo $i|cut -f 1 -d ,)
+        n2=$(echo $i|cut -f 2 -d ,)
+        xdf=$(df -kI $n1|tail +2|awk {'print $5'}|cut -d "%" -f 1)
+        size_all=`df -kI $n1|tail +2|awk {'print $2'}`
+        if [ $xdf -gt $n2 ]
+        then
+echo "\n---------------------- EIS Command Center ----------------------\n" >$LOG
+		echo "Automatic detection and operation by EIS Command Center\n" >>$LOG
+                date >>$LOG
+                echo "Unix-AIX Hostname: `hostname` : $n1 = $xdf%"               >>$LOG
+                echo "\nAuto increased space +2%"         >>$LOG
+                tmp=`expr $size_all \* 2`
+                tmp1=`expr $tmp / 100`
+                size_incr=`expr $tmp1 / 1024`
+                echo "Increased size +${size_incr}MB for $n1">>$LOG
+                chfs -a size=+${size_incr}M $n1>>$LOG
+                if [[ $? -eq 0 ]]
+                then
+		df -Ig $n1 >>$LOG
+		echo "\nRecommended Action: No response action is required." >>$LOG
+echo "\n---------------------- By EIS Command Center ----------------------\n" >>$LOG
+
+/usr/bin/mail -s "EIS Command Center (Unix-Linux Team): Inform the FS File System disk space ${n1} on host '`hostname`' was increased ${size_incr}MB" command_center_alert@bigc.co.th,mis_enterprise_unix_and_linux_technology@bigc.co.th,nsoc@bigc.co.th,suthanawan@bigc.co.th <$LOG
+
+                else
+echo "\n---------------------- EIS Command Center ----------------------\n" >$LOGerr
+		echo "Automatic detection and operation by EIS Command Center\n" >>$LOGerr
+		date >>$LOGerr
+		echo "Unix-AIX Hostname: `hostname` : $n1 = $xdf%"             >>$LOGerr
+		df -Ig $n1 >>$LOGerr
+                echo "\nWarning disk space $n1 on `hostname` over LV limit $n2 " >>$LOGerr
+echo "\nRecommended Action: Please call to EIS Unix-Linux Admin Team for review" >>$LOGerr
+echo "\n---------------------- By EIS Command Center ----------------------\n" >>$LOGerr
+
+mail -s "EIS Command Center (Unix-Linux Team): Warning FS File System disk space $n1 on host '`hostname`' over LV limit $n2 and no have free Physical disk space " command_center_alert@bigc.co.th,mis_enterprise_unix_and_linux_technology@bigc.co.th,nsoc@bigc.co.th,suthanawan@bigc.co.th <$LOGerr
+                fi
+        fi
+done
+#########################################################################################
