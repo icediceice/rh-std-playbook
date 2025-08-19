@@ -1,0 +1,23 @@
+---
+galaxy_info:
+  author: EIS Command Center - Unix/Linux Team
+  description: AIX CPU Management and Auto-scaling via HMC
+  company: BigC
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: AIX
+      versions:
+        - all
+  galaxy_tags:
+    - aix
+    - cpu
+    - hmc
+    - autoscaling
+    - monitoring
+
+dependencies: []
+
+collections:
+  - ansible.posix
+  - community.general

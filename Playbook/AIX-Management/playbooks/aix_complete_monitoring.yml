@@ -1,0 +1,154 @@
+---
+# AIX Complete Monitoring Playbook
+# Comprehensive monitoring and management of all AIX system components
+# Compatible with AAP 2.5 and includes credential injection
+
+- name: AIX Complete System Monitoring and Management
+  hosts: "{{ target_hosts | default('aix') }}"
+  gather_facts: true
+  become: true
+  serial: "{{ batch_size | default(1) }}"
+  
+  vars:
+    # Playbook identification for AAP
+    playbook_name: "AIX Complete Monitoring"
+    playbook_version: "1.0"
+    
+    # Change tracking
+    change_reason: "{{ change_reason | default('Comprehensive AIX system monitoring and management') }}"
+    change_ticket: "{{ change_ticket | default('') }}"
+    
+    # Service selection (can be overridden via survey)
+    enable_filesystem_monitoring: "{{ filesystem_monitoring | default(true) }}"
+    enable_cpu_monitoring: "{{ cpu_monitoring | default(true) }}"
+    enable_memory_monitoring: "{{ memory_monitoring | default(true) }}"
+    enable_print_queue_monitoring: "{{ print_queue_monitoring | default(true) }}"
+    enable_service_monitoring: "{{ service_monitoring | default(true) }}"
+    
+  pre_tasks:
+    - name: Display playbook information
+      ansible.builtin.debug:
+        msg: |
+          =====================================
+          AIX Complete Monitoring Playbook
+          =====================================
+          Version: {{ playbook_version }}
+          Target Hosts: {{ target_hosts | default('aix') }}
+          AAP Job Template: {{ aap_job_template }}
+          AAP Job ID: {{ aap_job_id }}
+          AAP User: {{ aap_user }}
+          Change Reason: {{ change_reason }}
+          Change Ticket: {{ change_ticket }}
+          
+          Enabled Services:
+          - Filesystem: {{ enable_filesystem_monitoring }}
+          - CPU: {{ enable_cpu_monitoring }}
+          - Memory: {{ enable_memory_monitoring }}
+          - Print Queue: {{ enable_print_queue_monitoring }}
+          - Service Monitoring: {{ enable_service_monitoring }}
+          =====================================
+      tags: always
+    
+    - name: Validate target hosts
+      ansible.builtin.fail:
+        msg: "No valid AIX hosts found in inventory"
+      when: ansible_system is not defined or ansible_system != "AIX"
+      tags: always
+    
+    - name: Record monitoring start time
+      ansible.builtin.set_fact:
+        monitoring_start_time: "{{ ansible_date_time.iso8601 }}"
+      tags: always
+
+  tasks:
+    - name: Execute Filesystem Management
+      include_role:
+        name: filesystem_management
+      when: enable_filesystem_monitoring | bool
+      tags:
+        - filesystem
+        - monitoring
+    
+    - name: Execute CPU Management
+      include_role:
+        name: cpu_management
+      when: enable_cpu_monitoring | bool
+      tags:
+        - cpu
+        - monitoring
+        - hmc
+    
+    - name: Execute Memory Management
+      include_role:
+        name: memory_management
+      when: enable_memory_monitoring | bool
+      tags:
+        - memory
+        - monitoring
+        - hmc
+    
+    - name: Execute Print Queue Management
+      include_role:
+        name: print_queue_management
+      when: enable_print_queue_monitoring | bool
+      tags:
+        - print_queue
+        - monitoring
+    
+    - name: Execute Service Monitoring
+      include_role:
+        name: service_monitoring
+      when: enable_service_monitoring | bool
+      tags:
+        - service_monitoring
+        - zabbix
+  
+  post_tasks:
+    - name: Calculate execution time
+      ansible.builtin.set_fact:
+        execution_duration: "{{ ((ansible_date_time.epoch | int) - (monitoring_start_time | to_datetime('%Y-%m-%dT%H:%M:%SZ') | int)) }}"
+      tags: always
+    
+    - name: Generate comprehensive summary report
+      ansible.builtin.debug:
+        msg: |
+          =====================================
+          Complete Monitoring Summary Report
+          =====================================
+          Host: {{ ansible_hostname }}
+          Start Time: {{ monitoring_start_time }}
+          End Time: {{ ansible_date_time.iso8601 }}
+          Duration: {{ execution_duration }} seconds
+          
+          Service Status:
+          - Filesystem Monitoring: {{ 'EXECUTED' if enable_filesystem_monitoring else 'SKIPPED' }}
+          - CPU Monitoring: {{ 'EXECUTED' if enable_cpu_monitoring else 'SKIPPED' }}
+          - Memory Monitoring: {{ 'EXECUTED' if enable_memory_monitoring else 'SKIPPED' }}
+          - Print Queue Monitoring: {{ 'EXECUTED' if enable_print_queue_monitoring else 'SKIPPED' }}
+          - Service Monitoring: {{ 'EXECUTED' if enable_service_monitoring else 'SKIPPED' }}
+          
+          Overall Status: COMPLETED SUCCESSFULLY
+          =====================================
+      tags: always
+    
+    - name: Send completion notification
+      community.general.mail:
+        host: "{{ smtp_host }}"
+        port: "{{ smtp_port }}"
+        username: "{{ smtp_user }}"
+        password: "{{ smtp_pass }}"
+        to: "{{ alert_emails }}"
+        subject: "EIS Command Center: AIX Complete Monitoring completed on {{ ansible_hostname }}"
+        body: |
+          AIX Complete System Monitoring has been completed successfully.
+          
+          Host: {{ ansible_hostname }}
+          Execution Time: {{ ansible_date_time.iso8601 }}
+          Duration: {{ execution_duration }} seconds
+          AAP Job ID: {{ aap_job_id }}
+          
+          All enabled monitoring services have been executed.
+      when: 
+        - alert_emails is defined
+        - send_completion_email | default(false) | bool
+      tags: always

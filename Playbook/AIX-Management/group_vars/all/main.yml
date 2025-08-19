@@ -1,0 +1,78 @@
+---
+# Global variables for all AIX systems
+# These variables apply to all AIX hosts unless overridden by more specific group_vars
+
+# AAP Credential Integration Variables
+# These will be automatically populated by AAP machine credentials
+# ansible_user: (injected by AAP machine credential)
+# ansible_password: (injected by AAP machine credential)
+
+# Default connection settings for all AIX systems
+ansible_connection: ssh
+ansible_become: true
+ansible_become_method: su
+ansible_become_user: root
+ansible_ssh_timeout: 30
+ansible_ssh_retries: 3
+
+# Default paths and directories for AIX management
+aix_log_dir: "/bigc/log"
+aix_script_dir: "/bigc/script"
+aix_config_dir: "/bigc/script"
+
+# Default notification settings (can be overridden by vault variables)
+# These use AAP credential injection for SMTP settings
+smtp_host: "{{ vault_smtp_host | default('localhost') }}"
+smtp_port: "{{ vault_smtp_port | default(587) }}"
+smtp_user: "{{ vault_smtp_user | default('') }}"
+smtp_pass: "{{ vault_smtp_pass | default('') }}"
+
+# Email recipients for alerts
+alert_emails:
+  - "command_center_alert@bigc.co.th"
+  - "mis_enterprise_unix_and_linux_technology@bigc.co.th"
+  - "nsoc@bigc.co.th"
+  - "suthanawan@bigc.co.th"
+
+# Default thresholds and limits
+filesystem_threshold_default: 85
+memory_threshold_default: 10
+cpu_load_threshold_default: 5
+
+# Retry settings
+max_retries: 3
+retry_delay: 5
+
+# Logging settings
+ansible_verbosity: 1
+enable_debug: false
+
+# AAP integration variables
+aap_job_template: "{{ awx_job_template_name | default('Unknown') }}"
+aap_job_id: "{{ awx_job_id | default('N/A') }}"
+aap_user: "{{ awx_user_name | default('Unknown') }}"
+aap_inventory: "{{ awx_inventory_name | default('Unknown') }}"
+
+# Change tracking
+change_tracking: true
+change_reason: "{{ change_reason | default('Automated operation via AAP') }}"
+change_ticket: "{{ change_ticket | default('') }}"
+
+# Error handling
+fail_on_error: true
+continue_on_error: false
+
+# HMC settings for hardware resource management
+hmc_host: "{{ vault_hmc_host | default('10.4.6.170') }}"
+hmc_user: "{{ vault_hmc_user | default('hscroot') }}"
+hmc_timeout: 30
+
+# Default increment sizes
+filesystem_increment_percent: 2
+memory_increment_mb: 512
+cpu_increment_count: 1
+
+# Service monitoring settings
+monitoring_enabled: true
+health_check_interval: 300
+service_restart_enabled: true

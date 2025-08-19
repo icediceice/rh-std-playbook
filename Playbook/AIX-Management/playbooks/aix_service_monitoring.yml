@@ -1,0 +1,68 @@
+---
+# AIX Service Monitoring Playbook
+# Monitors services like Zabbix agent and provides automatic restart capabilities
+# Compatible with AAP 2.5 and includes credential injection
+
+- name: AIX Service Monitoring and Management
+  hosts: "{{ target_hosts | default('aix') }}"
+  gather_facts: true
+  become: true
+  
+  vars:
+    # Playbook identification for AAP
+    playbook_name: "AIX Service Monitoring"
+    playbook_version: "1.0"
+    
+    # Change tracking
+    change_reason: "{{ change_reason | default('Automated service monitoring and restart') }}"
+    change_ticket: "{{ change_ticket | default('') }}"
+    
+    # Override services if provided via survey
+    monitored_services_override: "{{ monitored_services | default(omit) }}"
+    
+  pre_tasks:
+    - name: Display playbook information
+      ansible.builtin.debug:
+        msg: |
+          =====================================
+          AIX Service Monitoring Playbook
+          =====================================
+          Version: {{ playbook_version }}
+          Target Hosts: {{ target_hosts | default('aix') }}
+          AAP Job Template: {{ aap_job_template }}
+          AAP Job ID: {{ aap_job_id }}
+          AAP User: {{ aap_user }}
+          Change Reason: {{ change_reason }}
+          Change Ticket: {{ change_ticket }}
+          =====================================
+      tags: always
+    
+    - name: Validate target hosts
+      ansible.builtin.fail:
+        msg: "No valid AIX hosts found in inventory"
+      when: ansible_system is not defined or ansible_system != "AIX"
+      tags: always
+
+  roles:
+    - role: service_monitoring
+      tags:
+        - service_monitoring
+        - zabbix
+        - monitoring
+        - restart
+  
+  post_tasks:
+    - name: Generate summary report
+      ansible.builtin.debug:
+        msg: |
+          =====================================
+          Service Monitoring Summary
+          =====================================
+          Host: {{ ansible_hostname }}
+          Execution Time: {{ ansible_date_time.iso8601 }}
+          Service Monitoring: {{ service_monitoring_enabled }}
+          Auto-restart Enabled: {{ auto_restart_enabled }}
+          Zabbix Monitoring: {{ monitored_services.zabbix_agent.enabled }}
+          Status: Completed successfully
+          =====================================
+      tags: always

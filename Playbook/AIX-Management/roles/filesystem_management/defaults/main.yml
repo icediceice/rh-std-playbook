@@ -1,0 +1,44 @@
+---
+# Default variables for filesystem management role
+
+# Filesystem monitoring configuration
+filesystem_config_file: "{{ aix_config_dir }}/checkspace.cfg"
+filesystem_log_file: "{{ aix_log_dir }}/bgccheckspace.log"
+filesystem_error_log: "{{ aix_log_dir }}/bgccheckspace.err"
+
+# Default thresholds (can be overridden per filesystem)
+filesystem_default_threshold: "{{ filesystem_threshold_default | default(85) }}"
+filesystem_increment_percent: "{{ filesystem_increment_percent | default(2) }}"
+
+# Default filesystems to monitor
+filesystem_monitoring_config:
+  - filesystem: "/"
+    threshold: 85
+  - filesystem: "/usr"
+    threshold: 85
+  - filesystem: "/var"
+    threshold: 85
+  - filesystem: "/tmp"
+    threshold: 85
+  - filesystem: "/opt"
+    threshold: 95
+  - filesystem: "/home"
+    threshold: 85
+  - filesystem: "/bigc"
+    threshold: 95
+  - filesystem: "/oracle"
+    threshold: 85
+  - filesystem: "/prod01"
+    threshold: 90
+  - filesystem: "/was"
+    threshold: 90
+  - filesystem: "/archive"
+    threshold: 60
+
+# Email settings
+filesystem_alert_subject: "EIS Command Center (Unix-Linux Team): Filesystem alert for {{ ansible_hostname }}"
+filesystem_alert_body_template: "filesystem_alert.j2"
+
+# Retry settings
+filesystem_check_retries: 3
+filesystem_operation_timeout: 300

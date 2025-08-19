@@ -1,0 +1,65 @@
+{
+  "name": "AAP 2.5 AIX Print Queue Management Survey",
+  "description": "Survey for AIX print queue and spooler monitoring with auto-restart. Credentials are automatically injected by AAP.",
+  "questions": [
+    {
+      "variable": "target_hosts",
+      "type": "multiplechoice",
+      "question": "Select target AIX hosts or groups:",
+      "choices": [
+        "aix",
+        "production",
+        "staging",
+        "development",
+        "all"
+      ],
+      "default": "aix",
+      "required": true
+    },
+    {
+      "variable": "print_queues",
+      "type": "text",
+      "question": "Print queues to monitor (comma-separated, leave blank for defaults):",
+      "default": "lpbg5,lpbg6,lpbg1",
+      "required": false
+    },
+    {
+      "variable": "print_queue_monitoring_enabled",
+      "type": "boolean",
+      "question": "Enable print queue monitoring?",
+      "default": true
+    },
+    {
+      "variable": "spooler_monitoring_enabled",
+      "type": "boolean",
+      "question": "Enable spooler service monitoring?",
+      "default": true
+    },
+    {
+      "variable": "auto_restart_enabled",
+      "type": "boolean",
+      "question": "Enable automatic restart of failed services?",
+      "default": true
+    },
+    {
+      "variable": "change_reason",
+      "type": "text",
+      "question": "Reason for this operation:",
+      "default": "Automated print queue monitoring and restart",
+      "required": true
+    },
+    {
+      "variable": "change_ticket",
+      "type": "text",
+      "question": "Change ticket number (if applicable):",
+      "default": "",
+      "required": false
+    },
+    {
+      "variable": "enable_debug",
+      "type": "boolean",
+      "question": "Enable debug logging?",
+      "default": false
+    }
+  ]
+}

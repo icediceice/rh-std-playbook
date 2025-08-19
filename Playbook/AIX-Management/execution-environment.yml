@@ -1,0 +1,35 @@
+---
+# Execution Environment configuration for AAP 2.5 AIX Management
+# This defines the container image and dependencies for running AIX playbooks
+
+version: 3
+
+images:
+  base_image:
+    name: 'quay.io/ansible/creator-base:v0.5.0'
+
+dependencies:
+  galaxy: requirements.yml
+  python: |
+    requests>=2.25.1
+    pyyaml>=5.4.1
+    jinja2>=3.0.0
+    paramiko>=2.7.2
+  system: |
+    git [platform:rpm]
+    python3-dev [platform:dpkg]
+    python3-devel [platform:rpm]
+    openssh-clients [platform:rpm]
+    openssh-client [platform:dpkg]
+
+additional_build_steps:
+  prepend_base:
+    - RUN whoami
+    - RUN cat /etc/os-release
+  prepend_galaxy:
+    - RUN ansible-galaxy --version
+  prepend_builder:
+    - RUN echo "Installing additional dependencies for AIX management"
+  append_final:
+    - RUN echo "AIX Management Execution Environment ready"
+    - RUN echo "Supports: SSH connections, HMC integration, Email notifications"

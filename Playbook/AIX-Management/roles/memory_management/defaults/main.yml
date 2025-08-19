@@ -1,0 +1,22 @@
+---
+# Default variables for memory management role
+
+# Memory monitoring configuration
+memory_log_file: "{{ aix_log_dir }}/check_paging.log"
+memory_threshold: "{{ memory_threshold_default | default(10) }}"
+memory_increment_mb: "{{ memory_increment_mb | default(512) }}"
+
+# HMC configuration for memory management
+hmc_host: "{{ vault_hmc_host | default('10.4.6.169') }}"
+hmc_user: "{{ vault_hmc_user | default('hscroot') }}"
+hmc_managed_system_memory: "{{ hmc_managed_system_memory | default('RD-P10-S1024-9105-42A-SN789EE81') }}"
+hmc_partition_name_memory: "{{ hmc_partition_name_memory | default('new_dev_oracledb_11g') }}"
+hmc_timeout: 30
+
+# Email settings
+memory_alert_subject: "EIS Command Center (Unix-Linux Team): Memory alert for {{ ansible_hostname }}"
+memory_success_subject: "EIS Command Center (Unix-Linux Team): Found high paging space {{ paging_usage }}% on {{ ansible_hostname }}, Auto increased memory"
+
+# Monitoring settings
+memory_monitoring_enabled: true
+memory_auto_scaling_enabled: true

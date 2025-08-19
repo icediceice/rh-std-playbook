@@ -1,0 +1,12 @@
+---------------------- EIS Command Center ----------------------
+
+Automatic detection and operation by EIS Command Center
+
+Automatic restart {{ error_service }}
+
+{{ ansible_date_time.iso8601 }}
+Host: {{ ansible_hostname }}
+Service: {{ error_service }}
+Process: {{ error_process }}
+
+Error: Service restart failed

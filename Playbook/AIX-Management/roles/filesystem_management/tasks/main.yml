@@ -1,0 +1,177 @@
+---
+# Main tasks for filesystem management
+
+- name: Ensure log directory exists
+  ansible.builtin.file:
+    path: "{{ aix_log_dir }}"
+    state: directory
+    mode: '0755'
+  tags:
+    - filesystem
+    - setup
+
+- name: Ensure script directory exists
+  ansible.builtin.file:
+    path: "{{ aix_config_dir }}"
+    state: directory
+    mode: '0755'
+  tags:
+    - filesystem
+    - setup
+
+- name: Create filesystem monitoring configuration
+  ansible.builtin.template:
+    src: checkspace.cfg.j2
+    dest: "{{ filesystem_config_file }}"
+    mode: '0644'
+    backup: true
+  tags:
+    - filesystem
+    - config
+
+- name: Check filesystem usage
+  ansible.builtin.shell: |
+    df -kI {{ item.filesystem }} | tail -n +2 | awk '{print $5}' | cut -d '%' -f 1
+  register: filesystem_usage
+  loop: "{{ filesystem_monitoring_config }}"
+  changed_when: false
+  tags:
+    - filesystem
+    - check
+
+- name: Get filesystem total size
+  ansible.builtin.shell: |
+    df -kI {{ item.item.filesystem }} | tail -n +2 | awk '{print $2}'
+  register: filesystem_size
+  loop: "{{ filesystem_usage.results }}"
+  when: item.stdout | int > item.item.threshold
+  changed_when: false
+  tags:
+    - filesystem
+    - check
+
+- name: Log filesystem alert start
+  ansible.builtin.template:
+    src: filesystem_alert_header.j2
+    dest: "{{ filesystem_log_file }}"
+    mode: '0644'
+  when: filesystem_size.results | default([]) | selectattr('changed', 'equalto', false) | list | length > 0
+  tags:
+    - filesystem
+    - alert
+
+- name: Calculate filesystem increment size
+  ansible.builtin.set_fact:
+    filesystem_increment_mb: "{{ ((item.stdout | int * filesystem_increment_percent / 100) / 1024) | int }}"
+  loop: "{{ filesystem_size.results | default([]) }}"
+  when: item.stdout is defined
+  register: filesystem_increments
+  tags:
+    - filesystem
+    - calculation
+
+- name: Increase filesystem size
+  ansible.builtin.shell: |
+    chfs -a size=+{{ filesystem_increment_mb }}M {{ item.item.item.filesystem }}
+  register: filesystem_expand_result
+  loop: "{{ filesystem_increments.results | default([]) }}"
+  when: 
+    - item.ansible_facts is defined
+    - item.ansible_facts.filesystem_increment_mb is defined
+  failed_when: filesystem_expand_result.rc != 0
+  tags:
+    - filesystem
+    - expand
+
+- name: Log successful filesystem expansion
+  ansible.builtin.lineinfile:
+    path: "{{ filesystem_log_file }}"
+    line: |
+      {{ ansible_date_time.iso8601 }}
+      Unix-AIX Hostname: {{ ansible_hostname }} : {{ item.item.item.item.filesystem }} = {{ item.item.item.stdout }}%
+      Auto increased space +{{ filesystem_increment_percent }}%
+      Increased size +{{ item.item.ansible_facts.filesystem_increment_mb }}MB for {{ item.item.item.item.filesystem }}
+    create: true
+    mode: '0644'
+  loop: "{{ filesystem_expand_result.results | default([]) }}"
+  when: 
+    - item.rc is defined
+    - item.rc == 0
+  tags:
+    - filesystem
+    - logging
+
+- name: Get updated filesystem status
+  ansible.builtin.shell: |
+    df -Ig {{ item.item.item.item.filesystem }}
+  register: filesystem_status_after
+  loop: "{{ filesystem_expand_result.results | default([]) }}"
+  when: 
+    - item.rc is defined
+    - item.rc == 0
+  changed_when: false
+  tags:
+    - filesystem
+    - verify
+
+- name: Append filesystem status to log
+  ansible.builtin.lineinfile:
+    path: "{{ filesystem_log_file }}"
+    line: |
+      {{ item.stdout }}
+      Recommended Action: No response action is required.
+    mode: '0644'
+  loop: "{{ filesystem_status_after.results | default([]) }}"
+  when: item.stdout is defined
+  tags:
+    - filesystem
+    - logging
+
+- name: Send success notification email
+  community.general.mail:
+    host: "{{ smtp_host }}"
+    port: "{{ smtp_port }}"
+    username: "{{ smtp_user }}"
+    password: "{{ smtp_pass }}"
+    to: "{{ alert_emails }}"
+    subject: "EIS Command Center (Unix-Linux Team): Filesystem {{ item.item.item.item.filesystem }} on {{ ansible_hostname }} increased by {{ item.item.ansible_facts.filesystem_increment_mb }}MB"
+    body: "{{ lookup('file', filesystem_log_file) }}"
+  loop: "{{ filesystem_expand_result.results | default([]) }}"
+  when: 
+    - item.rc is defined
+    - item.rc == 0
+    - alert_emails is defined
+  tags:
+    - filesystem
+    - notification
+
+- name: Handle filesystem expansion failure
+  block:
+    - name: Log filesystem expansion failure
+      ansible.builtin.template:
+        src: filesystem_error.j2
+        dest: "{{ filesystem_error_log }}"
+        mode: '0644'
+      vars:
+        error_filesystem: "{{ item.item.item.item.filesystem }}"
+        error_usage: "{{ item.item.item.stdout }}"
+        error_threshold: "{{ item.item.item.item.threshold }}"
+    
+    - name: Send failure notification email
+      community.general.mail:
+        host: "{{ smtp_host }}"
+        port: "{{ smtp_port }}"
+        username: "{{ smtp_user }}"
+        password: "{{ smtp_pass }}"
+        to: "{{ alert_emails }}"
+        subject: "EIS Command Center (Unix-Linux Team): WARNING - Filesystem {{ item.item.item.item.filesystem }} on {{ ansible_hostname }} over limit and expansion failed"
+        body: "{{ lookup('file', filesystem_error_log) }}"
+      when: alert_emails is defined
+  
+  loop: "{{ filesystem_expand_result.results | default([]) }}"
+  when: 
+    - item.rc is defined
+    - item.rc != 0
+  tags:
+    - filesystem
+    - error_handling

@@ -1,0 +1,64 @@
+{
+  "name": "AAP 2.5 AIX Memory Management Survey",
+  "description": "Survey for AIX memory monitoring and auto-scaling via HMC. Credentials are automatically injected by AAP.",
+  "questions": [
+    {
+      "variable": "target_hosts",
+      "type": "multiplechoice",
+      "question": "Select target AIX hosts or groups:",
+      "choices": [
+        "aix",
+        "production",
+        "staging",
+        "development",
+        "all"
+      ],
+      "default": "aix",
+      "required": true
+    },
+    {
+      "variable": "memory_threshold",
+      "type": "integer",
+      "question": "Paging space usage threshold percentage:",
+      "default": 10,
+      "min": 5,
+      "max": 50,
+      "required": false
+    },
+    {
+      "variable": "memory_increment",
+      "type": "integer",
+      "question": "Memory increment in MB when scaling:",
+      "default": 512,
+      "min": 256,
+      "max": 2048,
+      "required": false
+    },
+    {
+      "variable": "memory_auto_scaling_enabled",
+      "type": "boolean",
+      "question": "Enable automatic memory scaling via HMC?",
+      "default": true
+    },
+    {
+      "variable": "change_reason",
+      "type": "text",
+      "question": "Reason for this operation:",
+      "default": "Automated memory monitoring and scaling",
+      "required": true
+    },
+    {
+      "variable": "change_ticket",
+      "type": "text",
+      "question": "Change ticket number (if applicable):",
+      "default": "",
+      "required": false
+    },
+    {
+      "variable": "enable_debug",
+      "type": "boolean",
+      "question": "Enable debug logging?",
+      "default": false
+    }
+  ]
+}

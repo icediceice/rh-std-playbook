@@ -1,0 +1,58 @@
+{
+  "name": "AAP 2.5 AIX Service Monitoring Survey",
+  "description": "Survey for AIX service monitoring (Zabbix, etc.) with auto-restart. Credentials are automatically injected by AAP.",
+  "questions": [
+    {
+      "variable": "target_hosts",
+      "type": "multiplechoice",
+      "question": "Select target AIX hosts or groups:",
+      "choices": [
+        "aix",
+        "production",
+        "staging",
+        "development",
+        "all"
+      ],
+      "default": "aix",
+      "required": true
+    },
+    {
+      "variable": "service_monitoring_enabled",
+      "type": "boolean",
+      "question": "Enable service monitoring?",
+      "default": true
+    },
+    {
+      "variable": "auto_restart_enabled",
+      "type": "boolean",
+      "question": "Enable automatic restart of failed services?",
+      "default": true
+    },
+    {
+      "variable": "zabbix_monitoring_enabled",
+      "type": "boolean",
+      "question": "Enable Zabbix agent monitoring?",
+      "default": true
+    },
+    {
+      "variable": "change_reason",
+      "type": "text",
+      "question": "Reason for this operation:",
+      "default": "Automated service monitoring and restart",
+      "required": true
+    },
+    {
+      "variable": "change_ticket",
+      "type": "text",
+      "question": "Change ticket number (if applicable):",
+      "default": "",
+      "required": false
+    },
+    {
+      "variable": "enable_debug",
+      "type": "boolean",
+      "question": "Enable debug logging?",
+      "default": false
+    }
+  ]
+}

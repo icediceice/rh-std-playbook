@@ -1,0 +1,149 @@
+---
+# Main tasks for memory management
+
+- name: Ensure log directory exists
+  ansible.builtin.file:
+    path: "{{ aix_log_dir }}"
+    state: directory
+    mode: '0755'
+  tags:
+    - memory
+    - setup
+
+- name: Check current paging space usage
+  ansible.builtin.shell: |
+    lsps -a | tail -1 | awk '{print $5}' | sed 's/%//'
+  register: paging_usage_result
+  changed_when: false
+  tags:
+    - memory
+    - monitoring
+
+- name: Set paging usage fact
+  ansible.builtin.set_fact:
+    paging_usage: "{{ paging_usage_result.stdout | int }}"
+  tags:
+    - memory
+    - monitoring
+
+- name: Check if memory threshold exceeded
+  ansible.builtin.set_fact:
+    memory_threshold_exceeded: "{{ paging_usage | int > memory_threshold | int }}"
+  tags:
+    - memory
+    - monitoring
+
+- name: Display memory status
+  ansible.builtin.debug:
+    msg: |
+      Current Paging Usage: {{ paging_usage }}%
+      Threshold: {{ memory_threshold }}%
+      Threshold Exceeded: {{ memory_threshold_exceeded }}
+  tags:
+    - memory
+    - monitoring
+
+- name: Memory auto-scaling block
+  block:
+    - name: Create memory alert log header
+      ansible.builtin.template:
+        src: memory_alert_header.j2
+        dest: "{{ memory_log_file }}"
+        mode: '0644'
+    
+    - name: Get current memory configuration (before)
+      ansible.builtin.shell: |
+        prtconf -m
+      register: memory_before
+      changed_when: false
+    
+    - name: Log memory status before addition
+      ansible.builtin.lineinfile:
+        path: "{{ memory_log_file }}"
+        line: |
+          Host {{ ansible_hostname }} memory < before add memory >
+          {{ memory_before.stdout }}
+          Auto increase memory {{ memory_increment_mb }} MB to {{ ansible_hostname }}
+        mode: '0644'
+    
+    - name: Add memory via HMC
+      ansible.builtin.shell: |
+        ssh {{ hmc_user }}@{{ hmc_host }} "chhwres -r mem -m {{ hmc_managed_system_memory }} -o a -p {{ hmc_partition_name_memory }} -q {{ memory_increment_mb }}"
+      register: hmc_memory_add_result
+      timeout: "{{ hmc_timeout }}"
+      ignore_errors: true
+    
+    - name: Wait for memory addition to take effect
+      ansible.builtin.pause:
+        seconds: 5
+      when: hmc_memory_add_result.rc == 0
+    
+    - name: Get current memory configuration (after)
+      ansible.builtin.shell: |
+        prtconf -m
+      register: memory_after
+      changed_when: false
+      when: hmc_memory_add_result.rc == 0
+    
+    - name: Log successful memory addition
+      ansible.builtin.lineinfile:
+        path: "{{ memory_log_file }}"
+        line: |
+          Host {{ ansible_hostname }} memory < after add memory >
+          {{ memory_after.stdout }}
+          
+          Recommended Action: If memory size increased, No response action is required.
+          Recommended Action: If memory size still same before/after, Please call to EIS Unix-Linux Admin Team for review
+          
+          ---------------------- By EIS Command Center ----------------------
+        mode: '0644'
+      when: hmc_memory_add_result.rc == 0
+    
+    - name: Send success notification email
+      community.general.mail:
+        host: "{{ smtp_host }}"
+        port: "{{ smtp_port }}"
+        username: "{{ smtp_user }}"
+        password: "{{ smtp_pass }}"
+        to: "{{ alert_emails }}"
+        subject: "{{ memory_success_subject }}"
+        body: "{{ lookup('file', memory_log_file) }}"
+      when: 
+        - hmc_memory_add_result.rc == 0
+        - alert_emails is defined
+    
+    - name: Handle memory addition failure
+      block:
+        - name: Log memory addition failure
+          ansible.builtin.lineinfile:
+            path: "{{ memory_log_file }}"
+            line: |
+              
+              --- Memory Addition Failed ---
+              Error: Unable to add memory via HMC
+              Current Memory: {{ memory_before.stdout }}
+              
+              Recommended Action: Please call EIS Unix-Linux Admin Team for review
+              
+              ---------------------- By EIS Command Center ----------------------
+            mode: '0644'
+        
+        - name: Send failure notification email
+          community.general.mail:
+            host: "{{ smtp_host }}"
+            port: "{{ smtp_port }}"
+            username: "{{ smtp_user }}"
+            password: "{{ smtp_pass }}"
+            to: "{{ alert_emails }}"
+            subject: "EIS Command Center (Unix-Linux Team): FAILED - Memory auto-scaling failed on {{ ansible_hostname }}"
+            body: "{{ lookup('file', memory_log_file) }}"
+          when: alert_emails is defined
+      
+      when: hmc_memory_add_result.rc != 0
+  
+  when: 
+    - memory_threshold_exceeded | bool
+    - memory_auto_scaling_enabled | bool
+  tags:
+    - memory
+    - autoscaling

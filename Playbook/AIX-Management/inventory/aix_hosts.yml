@@ -1,0 +1,46 @@
+---
+# AIX Inventory for AAP 2.5
+# Groups organize AIX hosts by environment and function
+
+all:
+  children:
+    aix:
+      children:
+        production:
+          hosts:
+            # Production AIX servers
+            # Add your production hosts here
+            # prd-aix-01:
+            #   ansible_host: 10.1.1.10
+            #   environment: production
+            #   hmc_partition_name: "PRD_bgcnsr_backup"
+            #   hmc_managed_system: "P780-Plus-MHD-SN0652C9T"
+        
+        staging:
+          hosts:
+            # Staging AIX servers
+            # Add your staging hosts here
+            # stg-aix-01:
+            #   ansible_host: 10.1.2.10
+            #   environment: staging
+            #   hmc_partition_name: "STG_bgcnsr_backup"
+            #   hmc_managed_system: "P780-Plus-MHD-SN0652C9T"
+        
+        development:
+          hosts:
+            # Development AIX servers
+            # Add your development hosts here
+            # dev-aix-01:
+            #   ansible_host: 10.1.3.10
+            #   environment: development
+            #   hmc_partition_name: "new_dev_oracledb_11g"
+            #   hmc_managed_system: "RD-P10-S1024-9105-42A-SN789EE81"
+      
+      vars:
+        # Common variables for all AIX hosts
+        ansible_user: "{{ vault_aix_user | default('root') }}"
+        ansible_password: "{{ vault_aix_password }}"
+        ansible_connection: ssh
+        ansible_become: true
+        ansible_become_method: su
+        ansible_python_interpreter: /usr/bin/python3

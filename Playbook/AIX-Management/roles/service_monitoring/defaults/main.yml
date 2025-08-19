@@ -1,0 +1,24 @@
+---
+# Default variables for service monitoring role
+
+# Service monitoring configuration
+service_log_file: "{{ aix_log_dir }}/zabbix_workload.log"
+service_error_log: "{{ aix_log_dir }}/zabbix_workload.err"
+zabbix_restart_script: "{{ aix_script_dir }}/script_zabbix_agent_restart.sh"
+
+# Services to monitor
+monitored_services:
+  zabbix_agent:
+    process_name: "zabbix_agentd"
+    restart_script: "{{ zabbix_restart_script }}"
+    high_load_indicator: "oraclecdbprod"  # Process indicating high load
+    enabled: true
+  
+# Email settings
+service_alert_subject: "EIS Command Center (Unix-Linux Team): Service monitoring alert for {{ ansible_hostname }}"
+zabbix_restart_subject: "EIS Command Center (Unix-Linux Team): Zabbix agent restarted due to high workload on {{ ansible_hostname }}"
+
+# Monitoring settings
+service_monitoring_enabled: true
+auto_restart_enabled: true
+restart_wait_time: 5

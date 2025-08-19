@@ -1,0 +1,26 @@
+---
+# Default variables for print queue management role
+
+# Print queue configuration
+print_queue_log_file: "{{ aix_log_dir }}/queue_check.tmp"
+print_queue_error_log: "{{ aix_log_dir }}/queue_check"
+spooler_log_file: "{{ aix_script_dir }}/chk_spooler.out"
+
+# Print queues to monitor
+print_queues_to_monitor:
+  - lpbg5
+  - lpbg6
+  - lpbg1
+
+# Restart settings
+queue_restart_wait_time: 15
+spooler_restart_wait_time: 5
+
+# Email settings
+print_queue_alert_subject: "EIS Command Center (Unix-Linux Team): Print queue alert for {{ ansible_hostname }}"
+spooler_alert_subject: "EIS Command Center (Unix-Linux Team): AIX service - spooler restarted on {{ ansible_hostname }}"
+
+# Monitoring settings
+print_queue_monitoring_enabled: true
+spooler_monitoring_enabled: true
+auto_restart_enabled: true

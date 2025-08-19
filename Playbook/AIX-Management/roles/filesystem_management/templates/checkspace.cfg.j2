@@ -1,0 +1,3 @@
+{% for fs in filesystem_monitoring_config %}
+{{ fs.filesystem }},{{ fs.threshold }}
+{% endfor %}

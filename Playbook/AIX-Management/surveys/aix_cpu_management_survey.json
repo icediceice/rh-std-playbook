@@ -1,0 +1,64 @@
+{
+  "name": "AAP 2.5 AIX CPU Management Survey",
+  "description": "Survey for AIX CPU monitoring and auto-scaling via HMC. Credentials are automatically injected by AAP.",
+  "questions": [
+    {
+      "variable": "target_hosts",
+      "type": "multiplechoice",
+      "question": "Select target AIX hosts or groups:",
+      "choices": [
+        "aix",
+        "production",
+        "staging",
+        "development",
+        "all"
+      ],
+      "default": "aix",
+      "required": true
+    },
+    {
+      "variable": "cpu_load_threshold",
+      "type": "float",
+      "question": "CPU load average threshold:",
+      "default": 5.0,
+      "min": 1.0,
+      "max": 20.0,
+      "required": false
+    },
+    {
+      "variable": "cpu_auto_scaling_enabled",
+      "type": "boolean",
+      "question": "Enable automatic CPU scaling via HMC?",
+      "default": true
+    },
+    {
+      "variable": "cpu_increment_count",
+      "type": "integer",
+      "question": "Number of virtual CPUs to add when scaling:",
+      "default": 1,
+      "min": 1,
+      "max": 4,
+      "required": false
+    },
+    {
+      "variable": "change_reason",
+      "type": "text",
+      "question": "Reason for this operation:",
+      "default": "Automated CPU monitoring and scaling",
+      "required": true
+    },
+    {
+      "variable": "change_ticket",
+      "type": "text",
+      "question": "Change ticket number (if applicable):",
+      "default": "",
+      "required": false
+    },
+    {
+      "variable": "enable_debug",
+      "type": "boolean",
+      "question": "Enable debug logging?",
+      "default": false
+    }
+  ]
+}

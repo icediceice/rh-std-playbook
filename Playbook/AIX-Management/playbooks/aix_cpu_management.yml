@@ -1,0 +1,84 @@
+---
+# AIX CPU Management Playbook
+# Monitors CPU load and automatically adds virtual CPUs via HMC when thresholds are exceeded
+# Compatible with AAP 2.5 and includes credential injection
+
+- name: AIX CPU Management and Auto-scaling
+  hosts: "{{ target_hosts | default('aix') }}"
+  gather_facts: true
+  become: true
+  
+  vars:
+    # Playbook identification for AAP
+    playbook_name: "AIX CPU Management"
+    playbook_version: "1.0"
+    
+    # Change tracking
+    change_reason: "{{ change_reason | default('Automated CPU monitoring and scaling') }}"
+    change_ticket: "{{ change_ticket | default('') }}"
+    
+    # Override thresholds if provided via survey
+    cpu_load_threshold_override: "{{ cpu_load_threshold | default(omit) }}"
+    
+  pre_tasks:
+    - name: Display playbook information
+      ansible.builtin.debug:
+        msg: |
+          =====================================
+          AIX CPU Management Playbook
+          =====================================
+          Version: {{ playbook_version }}
+          Target Hosts: {{ target_hosts | default('aix') }}
+          AAP Job Template: {{ aap_job_template }}
+          AAP Job ID: {{ aap_job_id }}
+          AAP User: {{ aap_user }}
+          Change Reason: {{ change_reason }}
+          Change Ticket: {{ change_ticket }}
+          HMC Host: {{ hmc_host }}
+          =====================================
+      tags: always
+    
+    - name: Validate target hosts
+      ansible.builtin.fail:
+        msg: "No valid AIX hosts found in inventory"
+      when: ansible_system is not defined or ansible_system != "AIX"
+      tags: always
+    
+    - name: Set CPU threshold if provided
+      ansible.builtin.set_fact:
+        cpu_load_threshold: "{{ cpu_load_threshold_override }}"
+      when: cpu_load_threshold_override is defined
+      tags: always
+    
+    - name: Validate HMC connectivity
+      ansible.builtin.wait_for:
+        host: "{{ hmc_host }}"
+        port: 22
+        timeout: 10
+      delegate_to: localhost
+      when: cpu_auto_scaling_enabled | bool
+      tags: always
+
+  roles:
+    - role: cpu_management
+      tags:
+        - cpu
+        - monitoring
+        - auto_scaling
+        - hmc
+  
+  post_tasks:
+    - name: Generate summary report
+      ansible.builtin.debug:
+        msg: |
+          =====================================
+          CPU Management Summary
+          =====================================
+          Host: {{ ansible_hostname }}
+          Execution Time: {{ ansible_date_time.iso8601 }}
+          Current Load Threshold: {{ cpu_load_threshold }}
+          Auto-scaling Enabled: {{ cpu_auto_scaling_enabled }}
+          HMC Integration: {{ hmc_host }}
+          Status: Completed successfully
+          =====================================
+      tags: always

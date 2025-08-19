@@ -1,0 +1,22 @@
+---
+galaxy_info:
+  author: EIS Command Center - Unix/Linux Team
+  description: AIX Filesystem Management and Auto-expansion
+  company: BigC
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: AIX
+      versions:
+        - all
+  galaxy_tags:
+    - aix
+    - filesystem
+    - monitoring
+    - automation
+
+dependencies: []
+
+collections:
+  - ansible.posix
+  - community.general

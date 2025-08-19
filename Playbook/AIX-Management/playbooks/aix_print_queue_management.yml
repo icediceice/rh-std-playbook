@@ -1,0 +1,76 @@
+---
+# AIX Print Queue Management Playbook
+# Monitors print queues and spooler services with automatic restart capabilities
+# Compatible with AAP 2.5 and includes credential injection
+
+- name: AIX Print Queue and Spooler Management
+  hosts: "{{ target_hosts | default('aix') }}"
+  gather_facts: true
+  become: true
+  
+  vars:
+    # Playbook identification for AAP
+    playbook_name: "AIX Print Queue Management"
+    playbook_version: "1.0"
+    
+    # Change tracking
+    change_reason: "{{ change_reason | default('Automated print queue monitoring and restart') }}"
+    change_ticket: "{{ change_ticket | default('') }}"
+    
+    # Override queues if provided via survey
+    print_queues_override: "{{ print_queues | default(omit) }}"
+    
+  pre_tasks:
+    - name: Display playbook information
+      ansible.builtin.debug:
+        msg: |
+          =====================================
+          AIX Print Queue Management Playbook
+          =====================================
+          Version: {{ playbook_version }}
+          Target Hosts: {{ target_hosts | default('aix') }}
+          AAP Job Template: {{ aap_job_template }}
+          AAP Job ID: {{ aap_job_id }}
+          AAP User: {{ aap_user }}
+          Change Reason: {{ change_reason }}
+          Change Ticket: {{ change_ticket }}
+          =====================================
+      tags: always
+    
+    - name: Validate target hosts
+      ansible.builtin.fail:
+        msg: "No valid AIX hosts found in inventory"
+      when: ansible_system is not defined or ansible_system != "AIX"
+      tags: always
+    
+    - name: Set print queues if provided
+      ansible.builtin.set_fact:
+        print_queues_to_monitor: "{{ print_queues_override }}"
+      when: 
+        - print_queues_override is defined
+        - print_queues_override | length > 0
+      tags: always
+
+  roles:
+    - role: print_queue_management
+      tags:
+        - print_queue
+        - spooler
+        - monitoring
+        - restart
+  
+  post_tasks:
+    - name: Generate summary report
+      ansible.builtin.debug:
+        msg: |
+          =====================================
+          Print Queue Management Summary
+          =====================================
+          Host: {{ ansible_hostname }}
+          Execution Time: {{ ansible_date_time.iso8601 }}
+          Monitored Queues: {{ print_queues_to_monitor | join(', ') }}
+          Spooler Monitoring: {{ spooler_monitoring_enabled }}
+          Auto-restart Enabled: {{ auto_restart_enabled }}
+          Status: Completed successfully
+          =====================================
+      tags: always

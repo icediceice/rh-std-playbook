@@ -1,0 +1,31 @@
+---
+# Default variables for CPU management role
+
+# CPU monitoring configuration
+cpu_load_config_file: "{{ aix_config_dir }}/load_soul.conf"
+cpu_poll_config_file: "{{ aix_config_dir }}/poll.conf"
+cpu_load_log_file: "{{ aix_log_dir }}/load_soul.log"
+cpu_autojob_log_file: "{{ aix_log_dir }}/load_soul_autojob.log"
+
+# Default CPU load thresholds
+cpu_load_threshold: "{{ cpu_load_threshold_default | default(5) }}"
+cpu_monitoring_interval: 300
+cpu_alert_counter: 2
+
+# CPU increment settings
+cpu_increment_count: "{{ cpu_increment_count | default(1) }}"
+
+# HMC configuration (from vault/group_vars)
+hmc_host: "{{ vault_hmc_host | default('10.4.6.170') }}"
+hmc_user: "{{ vault_hmc_user | default('hscroot') }}"
+hmc_managed_system: "{{ hmc_managed_system | default('P780-Plus-MHD-SN0652C9T') }}"
+hmc_partition_name: "{{ hmc_partition_name | default('PRD_bgcnsr_backup') }}"
+hmc_timeout: 30
+
+# Email settings
+cpu_alert_subject: "EIS Command Center (Unix-Linux Team): CPU Load alert for {{ ansible_hostname }}"
+cpu_success_subject: "EIS Command Center (Unix-Linux Team): CPU auto-added for high load on {{ ansible_hostname }}"
+
+# Monitoring settings
+cpu_monitoring_enabled: true
+cpu_auto_scaling_enabled: true

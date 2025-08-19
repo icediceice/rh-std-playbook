@@ -1,0 +1,23 @@
+---
+galaxy_info:
+  author: EIS Command Center - Unix/Linux Team
+  description: AIX Service Monitoring with Auto-restart capabilities
+  company: BigC
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: AIX
+      versions:
+        - all
+  galaxy_tags:
+    - aix
+    - service_monitoring
+    - zabbix
+    - monitoring
+    - restart
+
+dependencies: []
+
+collections:
+  - ansible.posix
+  - community.general

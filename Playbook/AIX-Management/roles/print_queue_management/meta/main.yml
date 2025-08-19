@@ -1,0 +1,23 @@
+---
+galaxy_info:
+  author: EIS Command Center - Unix/Linux Team
+  description: AIX Print Queue and Spooler Management with Auto-restart
+  company: BigC
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: AIX
+      versions:
+        - all
+  galaxy_tags:
+    - aix
+    - print_queue
+    - spooler
+    - monitoring
+    - restart
+
+dependencies: []
+
+collections:
+  - ansible.posix
+  - community.general

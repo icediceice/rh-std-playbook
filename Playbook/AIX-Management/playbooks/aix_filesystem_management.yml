@@ -1,0 +1,71 @@
+---
+# AIX Filesystem Management Playbook
+# Monitors filesystem usage and automatically expands when thresholds are exceeded
+# Compatible with AAP 2.5 and includes credential injection
+
+- name: AIX Filesystem Management and Auto-expansion
+  hosts: "{{ target_hosts | default('aix') }}"
+  gather_facts: true
+  become: true
+  
+  vars:
+    # Playbook identification for AAP
+    playbook_name: "AIX Filesystem Management"
+    playbook_version: "1.0"
+    
+    # Change tracking
+    change_reason: "{{ change_reason | default('Automated filesystem monitoring and expansion') }}"
+    change_ticket: "{{ change_ticket | default('') }}"
+    
+    # Override thresholds if provided via survey
+    filesystem_threshold_override: "{{ filesystem_threshold | default(omit) }}"
+    
+  pre_tasks:
+    - name: Display playbook information
+      ansible.builtin.debug:
+        msg: |
+          =====================================
+          AIX Filesystem Management Playbook
+          =====================================
+          Version: {{ playbook_version }}
+          Target Hosts: {{ target_hosts | default('aix') }}
+          AAP Job Template: {{ aap_job_template }}
+          AAP Job ID: {{ aap_job_id }}
+          AAP User: {{ aap_user }}
+          Change Reason: {{ change_reason }}
+          Change Ticket: {{ change_ticket }}
+          =====================================
+      tags: always
+    
+    - name: Validate target hosts
+      ansible.builtin.fail:
+        msg: "No valid AIX hosts found in inventory"
+      when: ansible_system is not defined or ansible_system != "AIX"
+      tags: always
+    
+    - name: Set filesystem threshold if provided
+      ansible.builtin.set_fact:
+        filesystem_default_threshold: "{{ filesystem_threshold_override }}"
+      when: filesystem_threshold_override is defined
+      tags: always
+
+  roles:
+    - role: filesystem_management
+      tags:
+        - filesystem
+        - monitoring
+        - auto_expansion
+  
+  post_tasks:
+    - name: Generate summary report
+      ansible.builtin.debug:
+        msg: |
+          =====================================
+          Filesystem Management Summary
+          =====================================
+          Host: {{ ansible_hostname }}
+          Execution Time: {{ ansible_date_time.iso8601 }}
+          Filesystems Monitored: {{ filesystem_monitoring_config | length }}
+          Status: Completed successfully
+          =====================================
+      tags: always

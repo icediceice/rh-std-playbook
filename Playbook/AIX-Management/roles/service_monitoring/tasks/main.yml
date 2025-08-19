@@ -1,0 +1,141 @@
+---
+# Main tasks for service monitoring
+
+- name: Ensure log directory exists
+  ansible.builtin.file:
+    path: "{{ aix_log_dir }}"
+    state: directory
+    mode: '0755'
+  tags:
+    - service_monitoring
+    - setup
+
+- name: Ensure script directory exists
+  ansible.builtin.file:
+    path: "{{ aix_script_dir }}"
+    state: directory
+    mode: '0755'
+  tags:
+    - service_monitoring
+    - setup
+
+- name: Check for high load indicators
+  ansible.builtin.shell: |
+    ps aux | head | grep {{ monitored_services.zabbix_agent.high_load_indicator }}
+  register: high_load_check
+  failed_when: false
+  changed_when: false
+  when: 
+    - service_monitoring_enabled | bool
+    - monitored_services.zabbix_agent.enabled | bool
+  tags:
+    - service_monitoring
+    - zabbix
+
+- name: Handle Zabbix agent restart due to high load
+  block:
+    - name: Create service alert log
+      ansible.builtin.template:
+        src: service_alert_header.j2
+        dest: "{{ service_log_file }}"
+        mode: '0644'
+    
+    - name: Check if Zabbix restart script exists
+      ansible.builtin.stat:
+        path: "{{ monitored_services.zabbix_agent.restart_script }}"
+      register: restart_script_stat
+    
+    - name: Create Zabbix restart script if it doesn't exist
+      ansible.builtin.template:
+        src: zabbix_restart_script.j2
+        dest: "{{ monitored_services.zabbix_agent.restart_script }}"
+        mode: '0755'
+      when: not restart_script_stat.stat.exists
+    
+    - name: Execute Zabbix agent restart script
+      ansible.builtin.shell: |
+        {{ monitored_services.zabbix_agent.restart_script }}
+      register: zabbix_restart_result
+      when: auto_restart_enabled | bool
+    
+    - name: Wait for service restart
+      ansible.builtin.pause:
+        seconds: "{{ restart_wait_time }}"
+      when: zabbix_restart_result is succeeded
+    
+    - name: Check Zabbix agent process status
+      ansible.builtin.shell: |
+        ps -ef | grep {{ monitored_services.zabbix_agent.process_name }}
+      register: zabbix_process_status
+      changed_when: false
+    
+    - name: Log successful restart
+      ansible.builtin.lineinfile:
+        path: "{{ service_log_file }}"
+        line: |
+          Show current zabbix agent process:
+          {{ zabbix_process_status.stdout }}
+          
+          Recommended Action: No response action is required.
+          
+          ---------------------- By EIS Command Center ----------------------
+        mode: '0644'
+      when: zabbix_restart_result.rc == 0
+    
+    - name: Send success notification email
+      community.general.mail:
+        host: "{{ smtp_host }}"
+        port: "{{ smtp_port }}"
+        username: "{{ smtp_user }}"
+        password: "{{ smtp_pass }}"
+        to: "{{ alert_emails }}"
+        subject: "{{ zabbix_restart_subject }}"
+        body: "{{ lookup('file', service_log_file) }}"
+      when: 
+        - zabbix_restart_result.rc == 0
+        - alert_emails is defined
+    
+    - name: Handle restart failure
+      block:
+        - name: Create error log
+          ansible.builtin.template:
+            src: service_error.j2
+            dest: "{{ service_error_log }}{{ ansible_date_time.date }}"
+            mode: '0644'
+          vars:
+            error_service: "Zabbix agent"
+            error_process: "{{ monitored_services.zabbix_agent.process_name }}"
+        
+        - name: Log current process status in error log
+          ansible.builtin.lineinfile:
+            path: "{{ service_error_log }}{{ ansible_date_time.date }}"
+            line: |
+              Show current zabbix agent process:
+              {{ zabbix_process_status.stdout }}
+              
+              Recommended Action: Please call to EIS Unix-Linux Admin Team for review
+              
+              ---------------------- By EIS Command Center ----------------------
+            mode: '0644'
+        
+        - name: Send failure notification email
+          community.general.mail:
+            host: "{{ smtp_host }}"
+            port: "{{ smtp_port }}"
+            username: "{{ smtp_user }}"
+            password: "{{ smtp_pass }}"
+            to: "{{ alert_emails }}"
+            subject: "EIS Command Center (Unix-Linux Team): FAILED - Zabbix agent restart failed on {{ ansible_hostname }}"
+            body: "{{ lookup('file', service_error_log + ansible_date_time.date) }}"
+          when: alert_emails is defined
+      
+      when: zabbix_restart_result.rc != 0
+  
+  when: 
+    - high_load_check.rc == 0
+    - service_monitoring_enabled | bool
+    - monitored_services.zabbix_agent.enabled | bool
+  tags:
+    - service_monitoring
+    - zabbix
+    - restart

@@ -1,0 +1,190 @@
+---
+# Main tasks for print queue management
+
+- name: Ensure log directory exists
+  ansible.builtin.file:
+    path: "{{ aix_log_dir }}"
+    state: directory
+    mode: '0755'
+  tags:
+    - print_queue
+    - setup
+
+- name: Ensure script directory exists
+  ansible.builtin.file:
+    path: "{{ aix_script_dir }}"
+    state: directory
+    mode: '0755'
+  tags:
+    - print_queue
+    - setup
+
+- name: Check spooler service group status
+  ansible.builtin.shell: |
+    lssrc -g spooler | grep inoperative
+  register: spooler_status
+  failed_when: false
+  changed_when: false
+  tags:
+    - print_queue
+    - spooler
+    - monitoring
+
+- name: Handle spooler service restart
+  block:
+    - name: Create spooler alert log
+      ansible.builtin.template:
+        src: spooler_alert_header.j2
+        dest: "{{ spooler_log_file }}"
+        mode: '0644'
+    
+    - name: Log spooler status before restart
+      ansible.builtin.shell: |
+        lssrc -g spooler >> {{ spooler_log_file }}
+      changed_when: false
+    
+    - name: Restart spooler service group
+      ansible.builtin.shell: |
+        startsrc -g spooler
+      register: spooler_restart_result
+      when: auto_restart_enabled | bool
+    
+    - name: Wait for spooler restart
+      ansible.builtin.pause:
+        seconds: "{{ spooler_restart_wait_time }}"
+      when: spooler_restart_result is succeeded
+    
+    - name: Log spooler status after restart
+      ansible.builtin.shell: |
+        echo "{{ ansible_date_time.iso8601 }}" >> {{ spooler_log_file }}
+        lssrc -g spooler >> {{ spooler_log_file }}
+        echo "Recommended Action: If status: running, No response action is required." >> {{ spooler_log_file }}
+        echo "Recommended Action: If status: inoperative, Please call to EIS Unix-Linux Admin Team for review" >> {{ spooler_log_file }}
+      changed_when: false
+    
+    - name: Send spooler restart notification
+      community.general.mail:
+        host: "{{ smtp_host }}"
+        port: "{{ smtp_port }}"
+        username: "{{ smtp_user }}"
+        password: "{{ smtp_pass }}"
+        to: "{{ alert_emails }}"
+        subject: "{{ spooler_alert_subject }}"
+        body: "{{ lookup('file', spooler_log_file) }}"
+      when: alert_emails is defined
+  
+  when: 
+    - spooler_status.rc == 0
+    - spooler_monitoring_enabled | bool
+  tags:
+    - print_queue
+    - spooler
+    - restart
+
+- name: Create print queue monitoring log header
+  ansible.builtin.template:
+    src: print_queue_header.j2
+    dest: "{{ print_queue_log_file }}"
+    mode: '0644'
+  when: print_queue_monitoring_enabled | bool
+  tags:
+    - print_queue
+    - monitoring
+
+- name: Log current print queue status
+  ansible.builtin.shell: |
+    lpstat -a >> {{ print_queue_log_file }}
+  changed_when: false
+  when: print_queue_monitoring_enabled | bool
+  tags:
+    - print_queue
+    - monitoring
+
+- name: Check individual print queue status
+  ansible.builtin.shell: |
+    lpstat -p{{ item }} | grep DOWN
+  register: queue_status
+  loop: "{{ print_queues_to_monitor }}"
+  failed_when: false
+  changed_when: false
+  tags:
+    - print_queue
+    - monitoring
+
+- name: Handle DOWN print queues
+  block:
+    - name: Create queue error log
+      ansible.builtin.shell: |
+        echo "Found queue {{ item.item }} was down then" > {{ print_queue_error_log }}_{{ ansible_date_time.date }}.down
+        lpstat -W -p{{ item.item }} >> {{ print_queue_error_log }}_{{ ansible_date_time.date }}.down
+      when: item.rc == 0
+      loop: "{{ queue_status.results }}"
+    
+    - name: Disable and re-enable DOWN queues
+      ansible.builtin.shell: |
+        disable {{ item.item }}
+        enable {{ item.item }}
+      when: 
+        - item.rc == 0
+        - auto_restart_enabled | bool
+      loop: "{{ queue_status.results }}"
+      register: queue_restart_result
+    
+    - name: Wait for queue restart
+      ansible.builtin.pause:
+        seconds: "{{ queue_restart_wait_time }}"
+      when: queue_restart_result is changed
+    
+    - name: Log post-restart queue status
+      ansible.builtin.shell: |
+        echo "" >> {{ print_queue_log_file }}
+        echo "=============================== POST AUTO TASKS STATUS ===============================" >> {{ print_queue_log_file }}
+        echo "{{ ansible_date_time.iso8601 }}" >> {{ print_queue_log_file }}
+        lpstat -a >> {{ print_queue_log_file }}
+        echo "Recommended Action: If status: READY/RUNNING, No response action is required." >> {{ print_queue_log_file }}
+        echo "Recommended Action: If status: DOWN, Please call to EIS Unix-Linux Admin Team for review" >> {{ print_queue_log_file }}
+      changed_when: false
+      when: queue_restart_result is changed
+    
+    - name: Complete queue error logs
+      ansible.builtin.shell: |
+        echo "" >> {{ print_queue_error_log }}_{{ ansible_date_time.date }}.down
+        echo "---------------------- By EIS Command Center ----------------------" >> {{ print_queue_error_log }}_{{ ansible_date_time.date }}.down
+        echo "First action by auto disable and enable on OFI" >> {{ print_queue_error_log }}_{{ ansible_date_time.date }}.down
+      when: item.rc == 0
+      loop: "{{ queue_status.results }}"
+    
+    - name: Send queue restart notifications
+      community.general.mail:
+        host: "{{ smtp_host }}"
+        port: "{{ smtp_port }}"
+        username: "{{ smtp_user }}"
+        password: "{{ smtp_pass }}"
+        to: "{{ alert_emails }}"
+        subject: "EIS Command Center (Unix-Linux Team): Found print queue {{ item.item }} was DOWN and auto enabled on {{ ansible_hostname }}"
+        body: "{{ lookup('file', print_queue_error_log + '_' + ansible_date_time.date + '.down') }}"
+      when: 
+        - item.rc == 0
+        - alert_emails is defined
+      loop: "{{ queue_status.results }}"
+    
+    - name: Send post-restart status notifications
+      community.general.mail:
+        host: "{{ smtp_host }}"
+        port: "{{ smtp_port }}"
+        username: "{{ smtp_user }}"
+        password: "{{ smtp_pass }}"
+        to: "{{ alert_emails }}"
+        subject: "EIS Command Center (Unix-Linux Team): Re-check print queue {{ item.item }} status after auto enable on {{ ansible_hostname }}"
+        body: "{{ lookup('file', print_queue_log_file) }}"
+      when: 
+        - item.rc == 0
+        - alert_emails is defined
+        - queue_restart_result is changed
+      loop: "{{ queue_status.results }}"
+      delay: 5
+  
+  when: print_queue_monitoring_enabled | bool
+  tags:
+    - print_queue
+    - restart
