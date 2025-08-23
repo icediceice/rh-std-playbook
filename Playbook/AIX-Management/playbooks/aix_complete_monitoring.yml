@@ -12,11 +12,20 @@
   vars:
     # Playbook identification for AAP
     playbook_name: "AIX Complete Monitoring"
-    playbook_version: "1.0"
+    playbook_version: "2.0"
     
-    # Change tracking
+    # AAP Job Information (automatically injected by AAP)
+    aap_job_template: "{{ tower_job_template_name | default('N/A') }}"
+    aap_job_id: "{{ tower_job_id | default('N/A') }}"
+    aap_user: "{{ tower_user_name | default('N/A') }}"
+    aap_inventory: "{{ tower_inventory_name | default('N/A') }}"
+    
+    # Change tracking for AAP
     change_reason: "{{ change_reason | default('Comprehensive AIX system monitoring and management') }}"
     change_ticket: "{{ change_ticket | default('') }}"
+    
+    # Credential status for display
+    credential_status: "{{ 'AAP Injected' if ansible_user is defined and ansible_user != '' else 'Manual Configuration' }}"
     
     # Service selection (can be overridden via survey)
     enable_filesystem_monitoring: "{{ filesystem_monitoring | default(true) }}"
@@ -26,26 +35,40 @@
     enable_service_monitoring: "{{ service_monitoring | default(true) }}"
     
   pre_tasks:
-    - name: Display playbook information
+    - name: Display playbook execution information
       ansible.builtin.debug:
         msg: |
           =====================================
-          AIX Complete Monitoring Playbook
+          {{ playbook_name }}
           =====================================
           Version: {{ playbook_version }}
-          Target Hosts: {{ target_hosts | default('aix') }}
-          AAP Job Template: {{ aap_job_template }}
-          AAP Job ID: {{ aap_job_id }}
-          AAP User: {{ aap_user }}
-          Change Reason: {{ change_reason }}
-          Change Ticket: {{ change_ticket }}
+          Target Hosts: {{ target_hosts | default(group_names | first | default('aix')) }}
+          Batch Size: {{ batch_size | default('1') }}
           
-          Enabled Services:
+          AAP Integration:
+          - Job Template: {{ aap_job_template }}
+          - Job ID: {{ aap_job_id }}
+          - Executed By: {{ aap_user }}
+          - Inventory: {{ aap_inventory }}
+          
+          Authentication:
+          - User: {{ ansible_user | default('Not specified') }}
+          - Credential Status: {{ credential_status }}
+          
+          Change Management:
+          - Reason: {{ change_reason }}
+          - Ticket: {{ change_ticket | default('Not provided') }}
+          
+          Service Configuration:
           - Filesystem: {{ enable_filesystem_monitoring }}
           - CPU: {{ enable_cpu_monitoring }}
           - Memory: {{ enable_memory_monitoring }}
           - Print Queue: {{ enable_print_queue_monitoring }}
           - Service Monitoring: {{ enable_service_monitoring }}
+          
+          Execution Details:
+          - Start Time: {{ ansible_date_time.iso8601 }}
+          - Controller: {{ ansible_control_node | default('Unknown') }}
           =====================================
       tags: always
     
@@ -152,3 +175,35 @@
         - alert_emails is defined
         - send_completion_email | default(false) | bool
       tags: always
+
+  post_tasks:
+    - name: Display playbook completion summary
+      ansible.builtin.debug:
+        msg: |
+          =====================================
+          {{ playbook_name }} - COMPLETED
+          =====================================
+          Execution Summary:
+          - Job ID: {{ aap_job_id }}
+          - Completed: {{ ansible_date_time.iso8601 }}
+          - Status: Success
+          - Processed Hosts: {{ ansible_play_hosts | length }}
+          
+          Service Execution Status:
+          - Filesystem Monitoring: {{ 'EXECUTED' if enable_filesystem_monitoring else 'SKIPPED' }}
+          - CPU Monitoring: {{ 'EXECUTED' if enable_cpu_monitoring else 'SKIPPED' }}
+          - Memory Monitoring: {{ 'EXECUTED' if enable_memory_monitoring else 'SKIPPED' }}
+          - Print Queue Monitoring: {{ 'EXECUTED' if enable_print_queue_monitoring else 'SKIPPED' }}
+          - Service Monitoring: {{ 'EXECUTED' if enable_service_monitoring else 'SKIPPED' }}
+          
+          Change Tracking:
+          - Ticket: {{ change_ticket | default('No ticket provided') }}
+          - Reason: {{ change_reason }}
+          
+          Next Steps:
+          - Review AAP job logs for detailed results
+          - Verify monitoring configurations on target systems
+          - Update change management system if required
+          =====================================
+      tags: always
+      run_once: true

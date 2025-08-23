@@ -11,11 +11,20 @@
   vars:
     # Playbook identification for AAP
     playbook_name: "AIX CPU Management"
-    playbook_version: "1.0"
+    playbook_version: "2.0"
     
-    # Change tracking
+    # AAP Job Information (automatically injected by AAP)
+    aap_job_template: "{{ tower_job_template_name | default('N/A') }}"
+    aap_job_id: "{{ tower_job_id | default('N/A') }}"
+    aap_user: "{{ tower_user_name | default('N/A') }}"
+    aap_inventory: "{{ tower_inventory_name | default('N/A') }}"
+    
+    # Change tracking for AAP
     change_reason: "{{ change_reason | default('Automated CPU monitoring and scaling') }}"
     change_ticket: "{{ change_ticket | default('') }}"
+    
+    # Credential status for display
+    credential_status: "{{ 'AAP Injected' if ansible_user is defined and ansible_user != '' else 'Manual Configuration' }}"
     
     # Override thresholds if provided via survey
     cpu_load_threshold_override: "{{ cpu_load_threshold | default(omit) }}"
