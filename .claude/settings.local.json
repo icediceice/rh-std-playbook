@@ -18,7 +18,9 @@
       "Bash(timeout 300 ansible-builder build:*)",
       "Bash(ansible-playbook:*)",
       "Bash(echo $HOME)",
-      "WebFetch(domain:ibm.github.io)"
+      "WebFetch(domain:ibm.github.io)",
+      "Bash(./build.sh)",
+      "Bash(timeout:*)"
     ],
     "deny": []
   },

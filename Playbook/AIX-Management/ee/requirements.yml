@@ -1,0 +1,29 @@
+---
+# Ansible Collections for AIX Management Execution Environment
+# Based on requirements from ../requirements.yml
+
+collections:
+  # IBM Power Systems AIX Collection - for AIX-specific modules
+  - name: ibm.power_aix
+    version: ">=2.0.0"
+    source: https://galaxy.ansible.com
+
+  # Core Ansible Collections - Required for AAP 2.5
+  - name: ansible.posix
+    version: ">=1.5.0"
+    source: https://galaxy.ansible.com
+
+  # Community Collections
+  - name: community.general
+    version: ">=8.0.0"
+    source: https://galaxy.ansible.com
+
+  # Utilities for AAP 2.5
+  - name: ansible.utils
+    version: ">=3.0.0"
+    source: https://galaxy.ansible.com
+
+  # Email and notification support
+  - name: community.crypto
+    version: ">=2.0.0"
+    source: https://galaxy.ansible.com

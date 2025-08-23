@@ -1,0 +1,23 @@
+# Python dependencies for AIX Management Execution Environment
+# Compatible with AAP 2.5 and Python 3.9+
+
+# Core dependencies
+requests>=2.25.1
+pyyaml>=5.4.1
+jinja2>=3.0.0
+paramiko>=2.7.2
+
+# SSH and connectivity
+cryptography>=3.4.8
+bcrypt>=3.2.0
+
+# Data processing and utilities
+six>=1.16.0
+urllib3>=1.26.0
+certifi>=2021.10.8
+
+# Email and notification support
+email-validator>=1.1.3
+
+# Ansible specific dependencies
+ansible-runner>=2.1.0

@@ -1,0 +1,150 @@
+---
+# AIX Connectivity Test Playbook
+# Simple connectivity verification for AIX hosts
+# Tests SSH connection, basic commands, and system information gathering
+
+- name: AIX Basic Connectivity Test
+  hosts: "{{ target_hosts | default('aix') }}"
+  gather_facts: false
+  serial: "{{ batch_size | default(5) }}"
+  
+  vars:
+    # Playbook identification
+    playbook_name: "AIX Connectivity Test"
+    playbook_version: "1.0"
+    
+    # Test configuration
+    test_user: "{{ ansible_user | default('root') }}"
+    connection_timeout: "{{ timeout | default(30) }}"
+    
+  tasks:
+    - name: Display test information
+      ansible.builtin.debug:
+        msg: |
+          =====================================
+          AIX Connectivity Test
+          =====================================
+          Version: {{ playbook_version }}
+          Target Host: {{ inventory_hostname }}
+          Test User: {{ test_user }}
+          Connection Timeout: {{ connection_timeout }}s
+          =====================================
+      delegate_to: localhost
+      run_once: false
+
+    - name: Test 1 - Basic ping connectivity
+      ansible.builtin.ping:
+      register: ping_result
+      failed_when: false
+      tags: basic
+
+    - name: Display ping result
+      ansible.builtin.debug:
+        msg: "✅ Ping test: {{ 'PASSED' if ping_result is succeeded else 'FAILED' }}"
+      tags: basic
+
+    - name: Test 2 - Gather basic system facts
+      ansible.builtin.setup:
+        gather_subset:
+          - "!all"
+          - "min"
+          - "system"
+          - "network"
+      register: facts_result
+      failed_when: false
+      tags: facts
+
+    - name: Display system information
+      ansible.builtin.debug:
+        msg: |
+          System Information:
+          - Hostname: {{ ansible_hostname | default('Unknown') }}
+          - OS: {{ ansible_system | default('Unknown') }}
+          - Architecture: {{ ansible_architecture | default('Unknown') }}
+          - Kernel: {{ ansible_kernel | default('Unknown') }}
+          - IP Address: {{ ansible_default_ipv4.address | default('Unknown') }}
+      when: facts_result is succeeded
+      tags: facts
+
+    - name: Test 3 - Check AIX version
+      ansible.builtin.command: oslevel -r
+      register: aix_version
+      failed_when: false
+      changed_when: false
+      tags: aix
+
+    - name: Display AIX version
+      ansible.builtin.debug:
+        msg: "✅ AIX Version: {{ aix_version.stdout | default('Unable to determine') }}"
+      when: aix_version is succeeded
+      tags: aix
+
+    - name: Test 4 - Check disk space
+      ansible.builtin.command: df -h /
+      register: disk_space
+      failed_when: false
+      changed_when: false
+      tags: system
+
+    - name: Display disk usage
+      ansible.builtin.debug:
+        msg: "✅ Root filesystem usage: {{ disk_space.stdout_lines[1] if disk_space.stdout_lines | length > 1 else 'Unable to determine' }}"
+      when: disk_space is succeeded
+      tags: system
+
+    - name: Test 5 - Check system uptime
+      ansible.builtin.command: uptime
+      register: system_uptime
+      failed_when: false
+      changed_when: false
+      tags: system
+
+    - name: Display uptime
+      ansible.builtin.debug:
+        msg: "✅ System uptime: {{ system_uptime.stdout | default('Unable to determine') }}"
+      when: system_uptime is succeeded
+      tags: system
+
+    - name: Test 6 - Check SSH user privileges
+      ansible.builtin.command: whoami
+      register: current_user
+      failed_when: false
+      changed_when: false
+      tags: auth
+
+    - name: Display current user
+      ansible.builtin.debug:
+        msg: "✅ Connected as user: {{ current_user.stdout | default('Unknown') }}"
+      when: current_user is succeeded
+      tags: auth
+
+    - name: Test 7 - Check sudo access (if not root)
+      ansible.builtin.command: sudo -n whoami
+      register: sudo_test
+      failed_when: false
+      changed_when: false
+      when: current_user.stdout != "root"
+      tags: auth
+
+    - name: Display sudo status
+      ansible.builtin.debug:
+        msg: "✅ Sudo access: {{ 'Available' if sudo_test is succeeded else 'Not available or requires password' }}"
+      when: current_user.stdout != "root" and sudo_test is defined
+      tags: auth
+
+    - name: Final connectivity summary
+      ansible.builtin.debug:
+        msg: |
+          =====================================
+          Connectivity Test Summary for {{ inventory_hostname }}
+          =====================================
+          Ping Test: {{ '✅ PASSED' if ping_result is succeeded else '❌ FAILED' }}
+          Facts Gathering: {{ '✅ PASSED' if facts_result is succeeded else '❌ FAILED' }}
+          AIX Version Check: {{ '✅ PASSED' if aix_version is succeeded else '❌ FAILED' }}
+          Disk Space Check: {{ '✅ PASSED' if disk_space is succeeded else '❌ FAILED' }}
+          Uptime Check: {{ '✅ PASSED' if system_uptime is succeeded else '❌ FAILED' }}
+          User Authentication: {{ '✅ PASSED' if current_user is succeeded else '❌ FAILED' }}
+          
+          Overall Status: {{ 'CONNECTIVITY VERIFIED' if (ping_result is succeeded and facts_result is succeeded and current_user is succeeded) else 'CONNECTIVITY ISSUES DETECTED' }}
+          =====================================
+      tags: always
