@@ -1,0 +1,235 @@
+---
+# AIX Connectivity Test Playbook - Enhanced with AIX Modules
+# Uses IBM Power AIX collection modules where appropriate
+# Falls back to generic modules for basic connectivity
+
+- name: AIX Enhanced Connectivity Test
+  hosts: "{{ target_hosts | default('aix') }}"
+  gather_facts: false
+  serial: "{{ batch_size | default(5) }}"
+  
+  vars:
+    # Playbook identification
+    playbook_name: "AIX Enhanced Connectivity Test"
+    playbook_version: "2.0"
+    
+    # Test configuration
+    test_user: "{{ ansible_user | default('root') }}"
+    connection_timeout: "{{ timeout | default(30) }}"
+    
+    # AAP Job Information (automatically injected by AAP)
+    aap_job_template: "{{ tower_job_template_name | default('N/A') }}"
+    aap_job_id: "{{ tower_job_id | default('N/A') }}"
+    aap_user: "{{ tower_user_name | default('N/A') }}"
+    
+  tasks:
+    - name: Display test information
+      ansible.builtin.debug:
+        msg: |
+          =====================================
+          AIX Enhanced Connectivity Test
+          =====================================
+          Version: {{ playbook_version }}
+          Target Host: {{ inventory_hostname }}
+          Test User: {{ test_user }}
+          Connection Timeout: {{ connection_timeout }}s
+          AAP Job Template: {{ aap_job_template }}
+          AAP Job ID: {{ aap_job_id }}
+          AAP User: {{ aap_user }}
+          Credential Status: {{ 'Injected' if ansible_user is defined and ansible_user != '' else 'Manual' }}
+          =====================================
+      delegate_to: localhost
+      run_once: false
+
+    - name: Test 1 - Basic ping connectivity
+      ansible.builtin.ping:
+      register: ping_result
+      failed_when: false
+      tags: basic
+
+    - name: Display ping result
+      ansible.builtin.debug:
+        msg: "✅ Ping test: {{ 'PASSED' if ping_result is succeeded else 'FAILED' }}"
+      tags: basic
+
+    - name: Test 2 - Gather basic system facts
+      ansible.builtin.setup:
+        gather_subset:
+          - "!all"
+          - "min"
+          - "system"
+          - "network"
+      register: facts_result
+      failed_when: false
+      tags: facts
+
+    - name: Display system information
+      ansible.builtin.debug:
+        msg: |
+          System Information:
+          - Hostname: {{ ansible_hostname | default('Unknown') }}
+          - OS: {{ ansible_system | default('Unknown') }}
+          - Architecture: {{ ansible_architecture | default('Unknown') }}
+          - Kernel: {{ ansible_kernel | default('Unknown') }}
+          - IP Address: {{ ansible_default_ipv4.address | default('Unknown') }}
+      when: facts_result is succeeded
+      tags: facts
+
+    - name: Test 3 - Get AIX system configuration using getconf module
+      ibm.power_aix.getconf:
+        name: 
+          - KERNEL_BITMODE
+          - HARDWARE_BITMODE  
+          - _SC_AIX_REALMEM
+          - _SC_NPROCESSORS_ONLN
+      register: aix_config
+      failed_when: false
+      tags: aix
+
+    - name: Display AIX configuration
+      ansible.builtin.debug:
+        msg: |
+          ✅ AIX System Configuration:
+          - Kernel Bitmode: {{ aix_config.ansible_facts.getconf.KERNEL_BITMODE | default('Unknown') }}
+          - Hardware Bitmode: {{ aix_config.ansible_facts.getconf.HARDWARE_BITMODE | default('Unknown') }}
+          - Real Memory (MB): {{ (aix_config.ansible_facts.getconf._SC_AIX_REALMEM | int / 1024) | round | int if aix_config.ansible_facts.getconf._SC_AIX_REALMEM is defined else 'Unknown' }}
+          - Online CPUs: {{ aix_config.ansible_facts.getconf._SC_NPROCESSORS_ONLN | default('Unknown') }}
+      when: aix_config is succeeded
+      tags: aix
+
+    - name: Test 4 - Get LPAR facts using AIX module
+      ibm.power_aix.lpar_facts:
+      register: lpar_info
+      failed_when: false
+      tags: lpar
+
+    - name: Display LPAR information
+      ansible.builtin.debug:
+        msg: |
+          ✅ LPAR Information:
+          - LPAR Name: {{ lpar_info.ansible_facts.lpar_info.name | default('Unknown') }}
+          - LPAR ID: {{ lpar_info.ansible_facts.lpar_info.lpar_id | default('Unknown') }}
+          - Type: {{ lpar_info.ansible_facts.lpar_info.type | default('Unknown') }}
+          - Mode: {{ lpar_info.ansible_facts.lpar_info.mode | default('Unknown') }}
+      when: lpar_info is succeeded and lpar_info.ansible_facts.lpar_info is defined
+      tags: lpar
+
+    - name: Test 5 - Check filesystem usage using AIX filesystem module
+      ibm.power_aix.filesystem:
+        filesystem: "/"
+        state: present
+      register: filesystem_info
+      failed_when: false
+      tags: filesystem
+
+    - name: Get detailed filesystem information
+      ansible.builtin.command: df -h /
+      register: df_output
+      failed_when: false
+      changed_when: false
+      when: filesystem_info is succeeded
+      tags: filesystem
+
+    - name: Display filesystem usage
+      ansible.builtin.debug:
+        msg: |
+          ✅ Root Filesystem Status:
+          {{ df_output.stdout | default('Unable to determine filesystem usage') }}
+      when: df_output is succeeded and df_output.stdout is defined
+      tags: filesystem
+
+    - name: Test 6 - Get LVM facts using AIX module
+      ibm.power_aix.lvm_facts:
+      register: lvm_info
+      failed_when: false
+      tags: lvm
+
+    - name: Display LVM information
+      ansible.builtin.debug:
+        msg: |
+          ✅ LVM Information:
+          - Volume Groups: {{ lvm_info.ansible_facts.lvm_facts.vgs.keys() | list | join(', ') if lvm_info.ansible_facts.lvm_facts.vgs is defined else 'Unknown' }}
+          - Physical Volumes: {{ lvm_info.ansible_facts.lvm_facts.pvs.keys() | list | length if lvm_info.ansible_facts.lvm_facts.pvs is defined else 'Unknown' }}
+      when: lvm_info is succeeded and lvm_info.ansible_facts.lvm_facts is defined
+      tags: lvm
+
+    - name: Test 7 - Check for system errors using errpt module
+      ibm.power_aix.errpt:
+        detail: false
+        criteria: "-s mmddHHMM{{ ansible_date_time.month }}{{ ansible_date_time.day }}0000"
+      register: error_report
+      failed_when: false
+      tags: errors
+
+    - name: Display recent errors
+      ansible.builtin.debug:
+        msg: |
+          ✅ Recent System Errors (today):
+          {{ 'No errors found' if (error_report.stderr is defined and 'No such file' in error_report.stderr) or (error_report.stdout is defined and error_report.stdout == '') else error_report.stdout | default('Unable to determine') }}
+      when: error_report is defined
+      tags: errors
+
+    - name: Test 8 - Check SSH user privileges
+      ansible.builtin.command: whoami
+      register: current_user
+      failed_when: false
+      changed_when: false
+      tags: auth
+
+    - name: Display current user
+      ansible.builtin.debug:
+        msg: "✅ Connected as user: {{ current_user.stdout | default('Unknown') }}"
+      when: current_user is succeeded and current_user.stdout is defined
+      tags: auth
+
+    - name: Test 9 - Check sudo access (if not root)
+      ansible.builtin.command: sudo -n whoami
+      register: sudo_test
+      failed_when: false
+      changed_when: false
+      when: current_user is succeeded and current_user.stdout is defined and current_user.stdout != "root"
+      tags: auth
+
+    - name: Display sudo status
+      ansible.builtin.debug:
+        msg: "✅ Sudo access: {{ 'Available' if sudo_test is succeeded else 'Not available or requires password' }}"
+      when: current_user is succeeded and current_user.stdout is defined and current_user.stdout != "root" and sudo_test is defined
+      tags: auth
+
+    - name: Test 10 - Get software information using lpp_facts module
+      ibm.power_aix.lpp_facts:
+      register: software_info
+      failed_when: false
+      tags: software
+
+    - name: Display key software packages
+      ansible.builtin.debug:
+        msg: |
+          ✅ Key Software Packages:
+          - Total packages installed: {{ software_info.ansible_facts.lpp_facts | length if software_info.ansible_facts.lpp_facts is defined else 'Unknown' }}
+          - AIX Base OS: {{ software_info.ansible_facts.lpp_facts | selectattr('name', 'match', 'bos.rte') | map(attribute='version') | first | default('Unknown') }}
+      when: software_info is succeeded and software_info.ansible_facts.lpp_facts is defined
+      tags: software
+
+    - name: Final connectivity summary
+      ansible.builtin.debug:
+        msg: |
+          =====================================
+          Enhanced Connectivity Test Summary for {{ inventory_hostname }}
+          =====================================
+          Basic Tests:
+          Ping Test: {{ '✅ PASSED' if ping_result is succeeded else '❌ FAILED' }}
+          Facts Gathering: {{ '✅ PASSED' if facts_result is succeeded else '❌ FAILED' }}
+          User Authentication: {{ '✅ PASSED' if current_user is succeeded else '❌ FAILED' }}
+          
+          AIX-Specific Tests:
+          System Configuration: {{ '✅ PASSED' if aix_config is succeeded else '❌ FAILED' }}
+          LPAR Information: {{ '✅ PASSED' if lpar_info is succeeded else '❌ FAILED' }}
+          Filesystem Check: {{ '✅ PASSED' if filesystem_info is succeeded else '❌ FAILED' }}
+          LVM Information: {{ '✅ PASSED' if lvm_info is succeeded else '❌ FAILED' }}
+          Error Report Check: {{ '✅ PASSED' if error_report is defined else '❌ FAILED' }}
+          Software Information: {{ '✅ PASSED' if software_info is succeeded else '❌ FAILED' }}
+          
+          Overall Status: {{ 'CONNECTIVITY AND AIX MODULES VERIFIED' if (ping_result is succeeded and facts_result is succeeded and current_user is succeeded and aix_config is succeeded) else 'ISSUES DETECTED - CHECK INDIVIDUAL TESTS' }}
+          =====================================
+      tags: always

@@ -85,7 +85,7 @@
     - name: Display AIX version
       ansible.builtin.debug:
         msg: "✅ AIX Version: {{ aix_version.stdout | default('Unable to determine') }}"
-      when: aix_version is succeeded
+      when: aix_version is succeeded and aix_version.stdout is defined
       tags: aix
 
     - name: Test 4 - Check disk space
@@ -97,7 +97,7 @@
 
     - name: Display disk usage
       ansible.builtin.debug:
-        msg: "✅ Root filesystem usage: {{ disk_space.stdout_lines[1] if disk_space.stdout_lines | length > 1 else 'Unable to determine' }}"
+        msg: "✅ Root filesystem usage: {{ disk_space.stdout_lines[1] if (disk_space.stdout_lines is defined and disk_space.stdout_lines | length > 1) else 'Unable to determine' }}"
       when: disk_space is succeeded
       tags: system
 
@@ -111,7 +111,7 @@
     - name: Display uptime
       ansible.builtin.debug:
         msg: "✅ System uptime: {{ system_uptime.stdout | default('Unable to determine') }}"
-      when: system_uptime is succeeded
+      when: system_uptime is succeeded and system_uptime.stdout is defined
       tags: system
 
     - name: Test 6 - Check SSH user privileges
@@ -124,7 +124,7 @@
     - name: Display current user
       ansible.builtin.debug:
         msg: "✅ Connected as user: {{ current_user.stdout | default('Unknown') }}"
-      when: current_user is succeeded
+      when: current_user is succeeded and current_user.stdout is defined
       tags: auth
 
     - name: Test 7 - Check sudo access (if not root)
@@ -132,13 +132,13 @@
       register: sudo_test
       failed_when: false
       changed_when: false
-      when: current_user.stdout != "root"
+      when: current_user is succeeded and current_user.stdout is defined and current_user.stdout != "root"
       tags: auth
 
     - name: Display sudo status
       ansible.builtin.debug:
         msg: "✅ Sudo access: {{ 'Available' if sudo_test is succeeded else 'Not available or requires password' }}"
-      when: current_user.stdout != "root" and sudo_test is defined
+      when: current_user is succeeded and current_user.stdout is defined and current_user.stdout != "root" and sudo_test is defined
       tags: auth
 
     - name: Final connectivity summary
