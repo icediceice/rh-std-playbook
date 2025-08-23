@@ -1,0 +1,112 @@
+---
+# AIX Python Discovery Playbook
+# Discovers available Python interpreters on AIX systems
+# Must be run before other playbooks that require Python
+
+- name: AIX Python Discovery
+  hosts: "{{ target_hosts | default('aix') }}"
+  gather_facts: false
+  
+  vars:
+    # Common Python paths on AIX
+    python_paths:
+      - /usr/bin/python
+      - /usr/bin/python2
+      - /usr/bin/python3
+      - /opt/freeware/bin/python
+      - /opt/freeware/bin/python2
+      - /opt/freeware/bin/python3
+      - /usr/local/bin/python
+      - /usr/local/bin/python3
+      - /opt/python/bin/python
+      - /opt/python/bin/python3
+    
+  tasks:
+    - name: Test basic connectivity without Python
+      raw: echo "Basic connectivity test - $(hostname) - $(date)"
+      register: basic_test
+      changed_when: false
+
+    - name: Display basic connectivity result
+      debug:
+        msg: "✅ Basic raw connectivity: {{ basic_test.stdout.strip() }}"
+      delegate_to: localhost
+
+    - name: Check for Python interpreters
+      raw: |
+        for python_path in {{ python_paths | join(' ') }}; do
+          if [ -x "$python_path" ]; then
+            echo "FOUND: $python_path - $($python_path --version 2>&1)"
+          fi
+        done
+      register: python_discovery
+      changed_when: false
+
+    - name: Display Python discovery results
+      debug:
+        msg: |
+          Python Discovery Results:
+          {{ python_discovery.stdout if python_discovery.stdout != '' else 'No Python interpreters found in common locations' }}
+      delegate_to: localhost
+
+    - name: Check for Python in PATH
+      raw: which python 2>/dev/null || echo "python not in PATH"
+      register: python_in_path
+      changed_when: false
+
+    - name: Check for Python3 in PATH  
+      raw: which python3 2>/dev/null || echo "python3 not in PATH"
+      register: python3_in_path
+      changed_when: false
+
+    - name: Display PATH results
+      debug:
+        msg: |
+          Python in PATH:
+          - python: {{ python_in_path.stdout.strip() }}
+          - python3: {{ python3_in_path.stdout.strip() }}
+      delegate_to: localhost
+
+    - name: Get system information using raw commands
+      raw: |
+        echo "=== System Information ==="
+        echo "Hostname: $(hostname)"
+        echo "AIX Version: $(oslevel -r 2>/dev/null || echo 'oslevel not available')"
+        echo "Architecture: $(uname -p)"
+        echo "Kernel: $(uname -v).$(uname -r)"
+        echo "Uptime: $(uptime)"
+      register: system_info
+      changed_when: false
+
+    - name: Display system information
+      debug:
+        msg: |
+          {{ system_info.stdout }}
+      delegate_to: localhost
+
+    - name: Generate Python configuration recommendation
+      debug:
+        msg: |
+          =====================================
+          PYTHON CONFIGURATION RECOMMENDATION
+          =====================================
+          
+          Based on the discovery results above, update your inventory with:
+          
+          If Python 2 was found (e.g., /usr/bin/python):
+          ansible_python_interpreter: /usr/bin/python
+          
+          If Python 3 was found (e.g., /opt/freeware/bin/python3):
+          ansible_python_interpreter: /opt/freeware/bin/python3
+          
+          If no Python found:
+          - Install Python using: installp -acX -d /path/to/media python
+          - Or install from AIX Toolbox: yum install python3
+          
+          Add this to your inventory group_vars/aix.yml:
+          ---
+          ansible_python_interpreter: /path/to/discovered/python
+          
+          =====================================
+      delegate_to: localhost
+      run_once: true

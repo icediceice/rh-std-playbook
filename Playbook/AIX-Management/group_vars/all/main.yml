@@ -15,6 +15,14 @@ ansible_become_user: root
 ansible_ssh_timeout: 30
 ansible_ssh_retries: 3
 
+# Python interpreter - OPTIONAL when using raw commands
+# For Python-based playbooks, uncomment and configure:
+# ansible_python_interpreter: /usr/bin/python          # AIX default Python 2
+# ansible_python_interpreter: /opt/freeware/bin/python3  # AIX Toolbox Python 3
+# ansible_python_interpreter: auto_legacy_silent         # Let Ansible discover automatically
+# 
+# For Python-free approach using raw commands, this is not needed
+
 # Default paths and directories for AIX management
 aix_log_dir: "/bigc/log"
 aix_script_dir: "/bigc/script"

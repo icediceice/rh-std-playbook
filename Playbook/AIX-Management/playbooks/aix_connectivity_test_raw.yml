@@ -1,0 +1,283 @@
+---
+# AIX Connectivity Test - Pure Shell/Raw Commands
+# No Python dependency - uses only raw SSH commands
+# Compatible with all AIX versions and minimal installations
+
+- name: AIX Raw Connectivity Test
+  hosts: "{{ target_hosts | default('aix') }}"
+  gather_facts: false
+  serial: "{{ batch_size | default(5) }}"
+  
+  vars:
+    # Playbook identification
+    playbook_name: "AIX Raw Connectivity Test"
+    playbook_version: "3.0"
+    test_timestamp: "{{ ansible_date_time.epoch | default('') }}"
+    
+  tasks:
+    - name: Display test header
+      debug:
+        msg: |
+          =====================================
+          AIX Raw Connectivity Test (No Python)
+          =====================================
+          Version: {{ playbook_version }}
+          Target Host: {{ inventory_hostname }}
+          Test Method: Raw SSH commands only
+          AAP Job Template: {{ tower_job_template_name | default('N/A') }}
+          AAP Job ID: {{ tower_job_id | default('N/A') }}
+          AAP User: {{ tower_user_name | default('N/A') }}
+          =====================================
+      delegate_to: localhost
+      run_once: false
+
+    - name: Test 1 - Basic connectivity and system identification
+      raw: |
+        echo "=== BASIC CONNECTIVITY TEST ==="
+        echo "Hostname: $(hostname)"
+        echo "Date: $(date)"
+        echo "Current User: $(whoami)"
+        echo "Shell: $0"
+        echo "PWD: $(pwd)"
+        echo "Test completed successfully"
+      register: basic_test
+      changed_when: false
+
+    - name: Display basic connectivity results
+      debug:
+        msg: |
+          ✅ Basic Connectivity Results:
+          {{ basic_test.stdout }}
+      delegate_to: localhost
+
+    - name: Test 2 - AIX system information
+      raw: |
+        echo "=== AIX SYSTEM INFORMATION ==="
+        echo "AIX Version: $(oslevel -r 2>/dev/null || echo 'oslevel command not available')"
+        echo "AIX Level: $(oslevel 2>/dev/null || echo 'oslevel command not available')"
+        echo "System Model: $(uname -M 2>/dev/null || echo 'Model info not available')"
+        echo "Architecture: $(uname -p 2>/dev/null || uname -m 2>/dev/null || echo 'Architecture info not available')"
+        echo "Kernel Version: $(uname -v).$(uname -r)"
+        echo "Hardware Platform: $(uname -i 2>/dev/null || echo 'Platform info not available')"
+      register: aix_info
+      changed_when: false
+      failed_when: false
+
+    - name: Display AIX system information
+      debug:
+        msg: |
+          ✅ AIX System Information:
+          {{ aix_info.stdout }}
+      delegate_to: localhost
+
+    - name: Test 3 - System resources and performance
+      raw: |
+        echo "=== SYSTEM RESOURCES ==="
+        echo "Uptime: $(uptime 2>/dev/null || echo 'uptime not available')"
+        echo ""
+        echo "Memory Information:"
+        svmon -G 2>/dev/null || echo "svmon command not available"
+        echo ""
+        echo "CPU Information:"
+        lsdev -C -c processor 2>/dev/null | head -10 || echo "processor info not available"
+        echo ""
+        echo "Load Average:"
+        w 2>/dev/null | head -1 || echo "load average not available"
+      register: resources_info
+      changed_when: false
+      failed_when: false
+
+    - name: Display system resources
+      debug:
+        msg: |
+          ✅ System Resources:
+          {{ resources_info.stdout }}
+      delegate_to: localhost
+
+    - name: Test 4 - Filesystem information
+      raw: |
+        echo "=== FILESYSTEM INFORMATION ==="
+        echo "Disk Usage:"
+        df -h 2>/dev/null || df 2>/dev/null || echo "df command not available"
+        echo ""
+        echo "Mount Points:"
+        mount 2>/dev/null | head -10 || echo "mount command not available"
+        echo ""
+        echo "Volume Groups:"
+        lsvg 2>/dev/null || echo "lsvg command not available"
+      register: filesystem_info
+      changed_when: false
+      failed_when: false
+
+    - name: Display filesystem information
+      debug:
+        msg: |
+          ✅ Filesystem Information:
+          {{ filesystem_info.stdout }}
+      delegate_to: localhost
+
+    - name: Test 5 - Network configuration
+      raw: |
+        echo "=== NETWORK CONFIGURATION ==="
+        echo "Network Interfaces:"
+        ifconfig -a 2>/dev/null | grep -E "(inet|flags)" | head -10 || echo "Network info not available"
+        echo ""
+        echo "Routing Table:"
+        netstat -rn 2>/dev/null | head -5 || echo "Routing info not available"
+        echo ""
+        echo "Hostname Resolution:"
+        nslookup $(hostname) 2>/dev/null | head -5 || echo "DNS resolution not available"
+      register: network_info
+      changed_when: false
+      failed_when: false
+
+    - name: Display network information
+      debug:
+        msg: |
+          ✅ Network Information:
+          {{ network_info.stdout }}
+      delegate_to: localhost
+
+    - name: Test 6 - User and security information
+      raw: |
+        echo "=== USER AND SECURITY ==="
+        echo "Current User ID: $(id 2>/dev/null || echo 'id command not available')"
+        echo "User Groups:"
+        groups 2>/dev/null || echo "groups command not available"
+        echo ""
+        echo "Sudo Test (non-interactive):"
+        sudo -n whoami 2>/dev/null && echo "Sudo access: Available" || echo "Sudo access: Not available or requires password"
+        echo ""
+        echo "User Environment:"
+        env | grep -E "(USER|HOME|PATH|SHELL)" 2>/dev/null || echo "Environment info limited"
+      register: user_info
+      changed_when: false
+      failed_when: false
+
+    - name: Display user information
+      debug:
+        msg: |
+          ✅ User and Security Information:
+          {{ user_info.stdout }}
+      delegate_to: localhost
+
+    - name: Test 7 - AIX-specific services and processes
+      raw: |
+        echo "=== AIX SERVICES AND PROCESSES ==="
+        echo "System Resource Controller (SRC) Services:"
+        lssrc -a 2>/dev/null | head -10 || echo "SRC services not available"
+        echo ""
+        echo "Critical Processes:"
+        ps -ef 2>/dev/null | grep -E "(init|kproc|wait)" | head -5 || echo "Process info not available"
+        echo ""
+        echo "System State:"
+        who -r 2>/dev/null || echo "System runlevel not available"
+      register: services_info
+      changed_when: false
+      failed_when: false
+
+    - name: Display services information
+      debug:
+        msg: |
+          ✅ AIX Services Information:
+          {{ services_info.stdout }}
+      delegate_to: localhost
+
+    - name: Test 8 - Hardware and device information
+      raw: |
+        echo "=== HARDWARE AND DEVICES ==="
+        echo "System Configuration:"
+        lscfg 2>/dev/null | head -10 || echo "Hardware config not available"
+        echo ""
+        echo "PCI Devices:"
+        lsdev -C -c pci 2>/dev/null | head -5 || echo "PCI devices not available"
+        echo ""
+        echo "Disk Devices:"
+        lsdev -C -c disk 2>/dev/null || echo "Disk devices not available"
+      register: hardware_info
+      changed_when: false
+      failed_when: false
+
+    - name: Display hardware information
+      debug:
+        msg: |
+          ✅ Hardware Information:
+          {{ hardware_info.stdout }}
+      delegate_to: localhost
+
+    - name: Test 9 - System logs and error checking
+      raw: |
+        echo "=== SYSTEM LOGS AND ERRORS ==="
+        echo "Recent System Errors (last 24 hours):"
+        errpt -s $(date -d '1 day ago' '+%m%d%H%M%y' 2>/dev/null || date '+%m%d0000%y') 2>/dev/null | head -10 || echo "Error log not available"
+        echo ""
+        echo "System Messages:"
+        tail -5 /var/adm/messages 2>/dev/null || echo "System messages not available"
+        echo ""
+        echo "Console Log:"
+        tail -3 /var/adm/ras/conslog 2>/dev/null || echo "Console log not available"
+      register: logs_info
+      changed_when: false
+      failed_when: false
+
+    - name: Display logs information
+      debug:
+        msg: |
+          ✅ System Logs Information:
+          {{ logs_info.stdout }}
+      delegate_to: localhost
+
+    - name: Test 10 - Command availability check
+      raw: |
+        echo "=== COMMAND AVAILABILITY CHECK ==="
+        for cmd in oslevel lsvg lsdev errpt svmon ifconfig netstat mount df ps lssrc; do
+          if which $cmd >/dev/null 2>&1; then
+            echo "$cmd: Available"
+          else
+            echo "$cmd: Not available"
+          fi
+        done
+        echo ""
+        echo "Shell Features:"
+        echo "Current Shell: $0"
+        echo "Shell Version: $($0 --version 2>/dev/null || echo 'Version not available')"
+      register: commands_check
+      changed_when: false
+      failed_when: false
+
+    - name: Display command availability
+      debug:
+        msg: |
+          ✅ Command Availability:
+          {{ commands_check.stdout }}
+      delegate_to: localhost
+
+    - name: Generate comprehensive test summary
+      debug:
+        msg: |
+          =====================================
+          COMPREHENSIVE TEST SUMMARY
+          =====================================
+          Host: {{ inventory_hostname }}
+          Test Type: Raw Commands (No Python)
+          
+          Test Results:
+          1. Basic Connectivity: {{ '✅ PASSED' if basic_test.rc == 0 else '❌ FAILED' }}
+          2. AIX System Info: {{ '✅ PASSED' if aix_info.rc == 0 else '❌ FAILED' }}
+          3. System Resources: {{ '✅ PASSED' if resources_info.rc == 0 else '❌ FAILED' }}
+          4. Filesystem Info: {{ '✅ PASSED' if filesystem_info.rc == 0 else '❌ FAILED' }}
+          5. Network Config: {{ '✅ PASSED' if network_info.rc == 0 else '❌ FAILED' }}
+          6. User Security: {{ '✅ PASSED' if user_info.rc == 0 else '❌ FAILED' }}
+          7. AIX Services: {{ '✅ PASSED' if services_info.rc == 0 else '❌ FAILED' }}
+          8. Hardware Info: {{ '✅ PASSED' if hardware_info.rc == 0 else '❌ FAILED' }}
+          9. System Logs: {{ '✅ PASSED' if logs_info.rc == 0 else '❌ FAILED' }}
+          10. Command Check: {{ '✅ PASSED' if commands_check.rc == 0 else '❌ FAILED' }}
+          
+          Overall Status: {{ 'ALL TESTS COMPLETED' if (basic_test.rc == 0 and aix_info.rc == 0) else 'SOME TESTS HAD ISSUES' }}
+          
+          Note: This test uses only raw SSH commands and does not require Python.
+          Individual command failures within tests are normal and indicate
+          missing commands or insufficient privileges rather than connectivity issues.
+          =====================================
+      delegate_to: localhost
+      tags: always
