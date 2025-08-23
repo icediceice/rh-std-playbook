@@ -1,5 +1,5 @@
 ---
-# Main tasks for CPU management
+# Main tasks for CPU management using IBM Power AIX collection where possible
 
 - name: Ensure log directory exists
   ansible.builtin.file:
@@ -10,6 +10,13 @@
     - cpu
     - setup
 
+- name: Gather LPAR facts using IBM AIX module
+  ibm.power_aix.lpar_facts:
+  register: lpar_info
+  tags:
+    - cpu
+    - facts
+
 - name: Get current CPU load average
   ansible.builtin.shell: |
     uptime | awk '{print $10}' | cut -f 1 -d ','
@@ -19,7 +26,7 @@
     - cpu
     - monitoring
 
-- name: Convert load average to integer
+- name: Convert load average to integer for comparison
   ansible.builtin.set_fact:
     cpu_load_int: "{{ (current_cpu_load.stdout | float * 100) | int }}"
   tags:
@@ -39,6 +46,7 @@
       Current CPU Load: {{ current_cpu_load.stdout }}
       Threshold: {{ cpu_load_threshold }}
       Threshold Exceeded: {{ cpu_threshold_exceeded }}
+      Current Online Virtual CPUs: {{ lpar_info.ansible_facts.lpar_info.online_virtual_cpus | default('N/A') }}
   tags:
     - cpu
     - monitoring
@@ -51,11 +59,21 @@
         dest: "{{ cpu_autojob_log_file }}"
         mode: '0644'
     
-    - name: Get current Virtual CPU count (before)
+    - name: Get current Virtual CPU count using IBM AIX module
+      ansible.builtin.set_fact:
+        cpu_count_before: "{{ lpar_info.ansible_facts.lpar_info.online_virtual_cpus | default('Unknown') }}"
+    
+    - name: Get current Virtual CPU count using lparstat (fallback)
       ansible.builtin.shell: |
         lparstat -i | grep 'Online Virtual CPUs' | awk '{print $NF}'
-      register: cpu_count_before
+      register: cpu_count_before_fallback
       changed_when: false
+      when: lpar_info.ansible_facts.lpar_info.online_virtual_cpus is not defined
+    
+    - name: Set CPU count before (using fallback if needed)
+      ansible.builtin.set_fact:
+        cpu_count_before: "{{ cpu_count_before_fallback.stdout if cpu_count_before_fallback.stdout is defined else cpu_count_before }}"
+      when: cpu_count_before_fallback.stdout is defined
     
     - name: Log current system status
       ansible.builtin.lineinfile:
@@ -63,7 +81,7 @@
         line: |
           System uptime: {{ current_cpu_load.stdout }}
           --- Show Virtual CPUs (before automatic add) ---
-          Online Virtual CPUs: {{ cpu_count_before.stdout }}
+          Online Virtual CPUs: {{ cpu_count_before }}
         mode: '0644'
     
     - name: Add virtual CPU via HMC
@@ -78,12 +96,33 @@
         seconds: 5
       when: hmc_cpu_add_result.rc == 0
     
-    - name: Get current Virtual CPU count (after)
+    - name: Refresh LPAR facts after CPU addition
+      ibm.power_aix.lpar_facts:
+      register: lpar_info_after
+      when: hmc_cpu_add_result.rc == 0
+    
+    - name: Get current Virtual CPU count (after) using IBM AIX module
+      ansible.builtin.set_fact:
+        cpu_count_after: "{{ lpar_info_after.ansible_facts.lpar_info.online_virtual_cpus | default('Unknown') }}"
+      when: 
+        - hmc_cpu_add_result.rc == 0
+        - lpar_info_after.ansible_facts.lpar_info.online_virtual_cpus is defined
+    
+    - name: Get current Virtual CPU count (after) using lparstat (fallback)
       ansible.builtin.shell: |
         lparstat -i | grep 'Online Virtual CPUs' | awk '{print $NF}'
-      register: cpu_count_after
+      register: cpu_count_after_fallback
       changed_when: false
-      when: hmc_cpu_add_result.rc == 0
+      when: 
+        - hmc_cpu_add_result.rc == 0
+        - (cpu_count_after is not defined or cpu_count_after == 'Unknown')
+    
+    - name: Set CPU count after (using fallback if needed)
+      ansible.builtin.set_fact:
+        cpu_count_after: "{{ cpu_count_after_fallback.stdout if cpu_count_after_fallback.stdout is defined else cpu_count_after | default('Unknown') }}"
+      when: 
+        - hmc_cpu_add_result.rc == 0
+        - cpu_count_after_fallback.stdout is defined
     
     - name: Get updated system load
       ansible.builtin.shell: |
@@ -100,7 +139,7 @@
           {{ ansible_date_time.iso8601 }}
           System uptime: {{ uptime_after.stdout }}
           --- Show Virtual CPUs (after automatic add) ---
-          Online Virtual CPUs: {{ cpu_count_after.stdout }}
+          Online Virtual CPUs: {{ cpu_count_after }}
           
           Recommended Action: No response action is required.
           
@@ -129,8 +168,10 @@
             line: |
               
               --- CPU Addition Failed ---
-              Error: Unable to add virtual CPU
-              Current Virtual CPUs: {{ cpu_count_before.stdout }}
+              Error: Unable to add virtual CPU via HMC
+              HMC Command: ssh {{ hmc_user }}@{{ hmc_host }} "chhwres -r proc -m {{ hmc_managed_system }} -o a -p {{ hmc_partition_name }} --procs {{ cpu_increment_count }}"
+              Error Output: {{ hmc_cpu_add_result.stderr | default('No error details available') }}
+              Current Virtual CPUs: {{ cpu_count_before }}
               
               Recommended Action: Please call EIS Unix-Linux Admin Team for review
               

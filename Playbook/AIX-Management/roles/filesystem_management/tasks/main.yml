@@ -1,5 +1,5 @@
 ---
-# Main tasks for filesystem management
+# Main tasks for filesystem management using IBM Power AIX collection where possible
 
 - name: Ensure log directory exists
   ansible.builtin.file:
@@ -29,7 +29,15 @@
     - filesystem
     - config
 
-- name: Check filesystem usage
+- name: Gather filesystem facts using setup module
+  ansible.builtin.setup:
+    gather_subset:
+      - mounts
+  tags:
+    - filesystem
+    - facts
+
+- name: Check filesystem usage for monitored filesystems
   ansible.builtin.shell: |
     df -kI {{ item.filesystem }} | tail -n +2 | awk '{print $5}' | cut -d '%' -f 1
   register: filesystem_usage
@@ -39,7 +47,7 @@
     - filesystem
     - check
 
-- name: Get filesystem total size
+- name: Get filesystem total size for filesystems exceeding threshold
   ansible.builtin.shell: |
     df -kI {{ item.item.filesystem }} | tail -n +2 | awk '{print $2}'
   register: filesystem_size
@@ -70,45 +78,82 @@
     - filesystem
     - calculation
 
-- name: Increase filesystem size
-  ansible.builtin.shell: |
-    chfs -a size=+{{ filesystem_increment_mb }}M {{ item.item.item.filesystem }}
+- name: Increase filesystem size using IBM AIX filesystem module
+  ibm.power_aix.filesystem:
+    filesystem: "{{ item.item.item.item.filesystem }}"
+    attributes:
+      size: "+{{ filesystem_increment_mb }}M"
+    state: present
   register: filesystem_expand_result
   loop: "{{ filesystem_increments.results | default([]) }}"
   when: 
     - item.ansible_facts is defined
     - item.ansible_facts.filesystem_increment_mb is defined
-  failed_when: filesystem_expand_result.rc != 0
+  failed_when: false  # Handle errors gracefully
   tags:
     - filesystem
     - expand
+
+- name: Fallback to chfs command if filesystem module fails
+  ansible.builtin.shell: |
+    chfs -a size=+{{ item.item.ansible_facts.filesystem_increment_mb }}M {{ item.item.item.item.item.filesystem }}
+  register: filesystem_expand_fallback
+  loop: "{{ filesystem_expand_result.results | default([]) }}"
+  when: 
+    - item.failed is defined
+    - item.failed | bool
+  failed_when: filesystem_expand_fallback.rc != 0
+  tags:
+    - filesystem
+    - expand
+    - fallback
+
+- name: Set expand success status
+  ansible.builtin.set_fact:
+    filesystem_expand_success: "{{ (item.failed is not defined or not item.failed) if item.changed is defined else (filesystem_expand_fallback.results | default([]) | selectattr('rc', 'equalto', 0) | list | length > 0) }}"
+  loop: "{{ filesystem_expand_result.results | default([]) }}"
+  when: item is defined
+  tags:
+    - filesystem
+    - status
 
 - name: Log successful filesystem expansion
   ansible.builtin.lineinfile:
     path: "{{ filesystem_log_file }}"
     line: |
       {{ ansible_date_time.iso8601 }}
-      Unix-AIX Hostname: {{ ansible_hostname }} : {{ item.item.item.item.filesystem }} = {{ item.item.item.stdout }}%
+      Unix-AIX Hostname: {{ ansible_hostname }} : {{ item.item.item.item.item.filesystem }} = {{ item.item.item.stdout }}%
       Auto increased space +{{ filesystem_increment_percent }}%
-      Increased size +{{ item.item.ansible_facts.filesystem_increment_mb }}MB for {{ item.item.item.item.filesystem }}
+      Increased size +{{ item.item.ansible_facts.filesystem_increment_mb }}MB for {{ item.item.item.item.item.filesystem }}
     create: true
     mode: '0644'
   loop: "{{ filesystem_expand_result.results | default([]) }}"
   when: 
-    - item.rc is defined
-    - item.rc == 0
+    - item.changed is defined
+    - item.changed | bool
+    - not (item.failed | default(false))
   tags:
     - filesystem
     - logging
 
-- name: Get updated filesystem status
+- name: Get updated filesystem status using AIX mount facts
+  ansible.builtin.setup:
+    gather_subset:
+      - mounts
+  when: filesystem_expand_result.results | default([]) | selectattr('changed', 'equalto', true) | list | length > 0
+  tags:
+    - filesystem
+    - verify
+
+- name: Get updated filesystem status using df command
   ansible.builtin.shell: |
-    df -Ig {{ item.item.item.item.filesystem }}
+    df -Ig {{ item.item.item.item.item.filesystem }}
   register: filesystem_status_after
   loop: "{{ filesystem_expand_result.results | default([]) }}"
   when: 
-    - item.rc is defined
-    - item.rc == 0
+    - item.changed is defined
+    - item.changed | bool
+    - not (item.failed | default(false))
   changed_when: false
   tags:
     - filesystem
@@ -134,12 +179,13 @@
     username: "{{ smtp_user }}"
     password: "{{ smtp_pass }}"
     to: "{{ alert_emails }}"
-    subject: "EIS Command Center (Unix-Linux Team): Filesystem {{ item.item.item.item.filesystem }} on {{ ansible_hostname }} increased by {{ item.item.ansible_facts.filesystem_increment_mb }}MB"
+    subject: "EIS Command Center (Unix-Linux Team): Filesystem {{ item.item.item.item.item.filesystem }} on {{ ansible_hostname }} increased by {{ item.item.ansible_facts.filesystem_increment_mb }}MB"
     body: "{{ lookup('file', filesystem_log_file) }}"
   loop: "{{ filesystem_expand_result.results | default([]) }}"
   when: 
-    - item.rc is defined
-    - item.rc == 0
+    - item.changed is defined
+    - item.changed | bool
+    - not (item.failed | default(false))
     - alert_emails is defined
   tags:
     - filesystem
@@ -153,7 +199,7 @@
         dest: "{{ filesystem_error_log }}"
         mode: '0644'
       vars:
-        error_filesystem: "{{ item.item.item.item.filesystem }}"
+        error_filesystem: "{{ item.item.item.item.item.filesystem }}"
         error_usage: "{{ item.item.item.stdout }}"
         error_threshold: "{{ item.item.item.item.threshold }}"
     
@@ -164,14 +210,14 @@
         username: "{{ smtp_user }}"
         password: "{{ smtp_pass }}"
         to: "{{ alert_emails }}"
-        subject: "EIS Command Center (Unix-Linux Team): WARNING - Filesystem {{ item.item.item.item.filesystem }} on {{ ansible_hostname }} over limit and expansion failed"
+        subject: "EIS Command Center (Unix-Linux Team): WARNING - Filesystem {{ item.item.item.item.item.filesystem }} on {{ ansible_hostname }} over limit and expansion failed"
         body: "{{ lookup('file', filesystem_error_log) }}"
       when: alert_emails is defined
   
   loop: "{{ filesystem_expand_result.results | default([]) }}"
   when: 
-    - item.rc is defined
-    - item.rc != 0
+    - item.failed is defined
+    - item.failed | bool
   tags:
     - filesystem
     - error_handling

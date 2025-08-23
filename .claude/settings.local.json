@@ -17,7 +17,8 @@
       "Bash(podman:*)",
       "Bash(timeout 300 ansible-builder build:*)",
       "Bash(ansible-playbook:*)",
-      "Bash(echo $HOME)"
+      "Bash(echo $HOME)",
+      "WebFetch(domain:ibm.github.io)"
     ],
     "deny": []
   },

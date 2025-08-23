@@ -4,6 +4,11 @@
 # Compatible with Execution Environment
 
 collections:
+  # IBM Power Systems AIX Collection - for AIX-specific modules
+  - name: ibm.power_aix
+    version: ">=2.0.0"
+    source: https://galaxy.ansible.com
+
   # Core Ansible Collections - Required for AAP 2.5
   - name: ansible.posix
     version: ">=1.5.0"
