@@ -13,13 +13,6 @@
     playbook_name: "AIX Connectivity Test"
     playbook_version: "1.0"
     
-    # AAP credential injection variables
-    # These will be automatically injected by AAP when using Machine Credential
-    ansible_user: "{{ ansible_user | default(lookup('env', 'ANSIBLE_NET_USERNAME') | default('')) }}"
-    ansible_password: "{{ ansible_password | default(lookup('env', 'ANSIBLE_NET_PASSWORD') | default('')) }}"
-    ansible_ssh_pass: "{{ ansible_ssh_pass | default(ansible_password) }}"
-    ansible_become_pass: "{{ ansible_become_pass | default(ansible_password) }}"
-    
     # Test configuration
     test_user: "{{ ansible_user | default('root') }}"
     connection_timeout: "{{ timeout | default(30) }}"
@@ -43,7 +36,7 @@
           AAP Job Template: {{ aap_job_template }}
           AAP Job ID: {{ aap_job_id }}
           AAP User: {{ aap_user }}
-          Credential Status: {{ 'Injected' if ansible_user != '' else 'Manual' }}
+          Credential Status: {{ 'Injected' if ansible_user is defined and ansible_user != '' else 'Manual' }}
           =====================================
       delegate_to: localhost
       run_once: false
