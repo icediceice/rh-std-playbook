@@ -1,20 +1,20 @@
 ---
-# Main tasks for filesystem management using IBM Power AIX collection where possible
+# Main tasks for filesystem management using direct SSH commands
 
 - name: Ensure log directory exists
-  ansible.builtin.file:
-    path: "{{ aix_log_dir }}"
-    state: directory
-    mode: '0755'
+  ansible.builtin.raw: |
+    [ -d "{{ aix_log_dir }}" ] || mkdir -p "{{ aix_log_dir }}"
+    chmod 755 "{{ aix_log_dir }}"
+  changed_when: false
   tags:
     - filesystem
     - setup
 
-- name: Ensure script directory exists
-  ansible.builtin.file:
-    path: "{{ aix_config_dir }}"
-    state: directory
-    mode: '0755'
+- name: Ensure config directory exists  
+  ansible.builtin.raw: |
+    [ -d "{{ aix_config_dir }}" ] || mkdir -p "{{ aix_config_dir }}"
+    chmod 755 "{{ aix_config_dir }}"
+  changed_when: false
   tags:
     - filesystem
     - setup
@@ -29,195 +29,118 @@
     - filesystem
     - config
 
-- name: Gather filesystem facts using setup module
-  ansible.builtin.setup:
-    gather_subset:
-      - mounts
-  tags:
-    - filesystem
-    - facts
-
-- name: Check filesystem usage for monitored filesystems
-  ansible.builtin.shell: |
-    df -kI {{ item.filesystem }} | tail -n +2 | awk '{print $5}' | cut -d '%' -f 1
-  register: filesystem_usage
-  loop: "{{ filesystem_monitoring_config }}"
+- name: Initialize filesystem monitoring log
+  ansible.builtin.raw: |
+    LOG_FILE="{{ aix_log_dir }}/filesystem_$(hostname)_$(date +%Y%m%d).log"
+    echo "=============================== FILESYSTEM MONITORING ===============================" > "$LOG_FILE"
+    echo "Date: $(date)" >> "$LOG_FILE"
+    echo "Hostname: $(hostname)" >> "$LOG_FILE" 
+    echo "Change Ticket: {{ change_ticket | default('AUTO') }}" >> "$LOG_FILE"
+    echo "Change Reason: {{ change_reason | default('Automated filesystem monitoring via AAP') }}" >> "$LOG_FILE"
+    echo "" >> "$LOG_FILE"
+  register: log_init
   changed_when: false
-  tags:
-    - filesystem
-    - check
-
-- name: Get filesystem total size for filesystems exceeding threshold
-  ansible.builtin.shell: |
-    df -kI {{ item.item.filesystem }} | tail -n +2 | awk '{print $2}'
-  register: filesystem_size
-  loop: "{{ filesystem_usage.results }}"
-  when: item.stdout | int > item.item.threshold
-  changed_when: false
-  tags:
-    - filesystem
-    - check
-
-- name: Log filesystem alert start
-  ansible.builtin.template:
-    src: filesystem_alert_header.j2
-    dest: "{{ filesystem_log_file }}"
-    mode: '0644'
-  when: filesystem_size.results | default([]) | selectattr('changed', 'equalto', false) | list | length > 0
-  tags:
-    - filesystem
-    - alert
-
-- name: Calculate filesystem increment size
-  ansible.builtin.set_fact:
-    filesystem_increment_mb: "{{ ((item.stdout | int * filesystem_increment_percent / 100) / 1024) | int }}"
-  loop: "{{ filesystem_size.results | default([]) }}"
-  when: item.stdout is defined
-  register: filesystem_increments
-  tags:
-    - filesystem
-    - calculation
-
-- name: Increase filesystem size using IBM AIX filesystem module
-  ibm.power_aix.filesystem:
-    filesystem: "{{ item.item.item.item.filesystem }}"
-    attributes:
-      size: "+{{ filesystem_increment_mb }}M"
-    state: present
-  register: filesystem_expand_result
-  loop: "{{ filesystem_increments.results | default([]) }}"
-  when: 
-    - item.ansible_facts is defined
-    - item.ansible_facts.filesystem_increment_mb is defined
-  failed_when: false  # Handle errors gracefully
-  tags:
-    - filesystem
-    - expand
-
-- name: Fallback to chfs command if filesystem module fails
-  ansible.builtin.shell: |
-    chfs -a size=+{{ item.item.ansible_facts.filesystem_increment_mb }}M {{ item.item.item.item.item.filesystem }}
-  register: filesystem_expand_fallback
-  loop: "{{ filesystem_expand_result.results | default([]) }}"
-  when: 
-    - item.failed is defined
-    - item.failed | bool
-  failed_when: filesystem_expand_fallback.rc != 0
-  tags:
-    - filesystem
-    - expand
-    - fallback
-
-- name: Set expand success status
-  ansible.builtin.set_fact:
-    filesystem_expand_success: "{{ (item.failed is not defined or not item.failed) if item.changed is defined else (filesystem_expand_fallback.results | default([]) | selectattr('rc', 'equalto', 0) | list | length > 0) }}"
-  loop: "{{ filesystem_expand_result.results | default([]) }}"
-  when: item is defined
-  tags:
-    - filesystem
-    - status
-
-- name: Log successful filesystem expansion
-  ansible.builtin.lineinfile:
-    path: "{{ filesystem_log_file }}"
-    line: |
-      {{ ansible_date_time.iso8601 }}
-      Unix-AIX Hostname: {{ ansible_hostname }} : {{ item.item.item.item.item.filesystem }} = {{ item.item.item.stdout }}%
-      Auto increased space +{{ filesystem_increment_percent }}%
-      Increased size +{{ item.item.ansible_facts.filesystem_increment_mb }}MB for {{ item.item.item.item.item.filesystem }}
-    create: true
-    mode: '0644'
-  loop: "{{ filesystem_expand_result.results | default([]) }}"
-  when: 
-    - item.changed is defined
-    - item.changed | bool
-    - not (item.failed | default(false))
   tags:
     - filesystem
     - logging
 
-- name: Get updated filesystem status using AIX mount facts
-  ansible.builtin.setup:
-    gather_subset:
-      - mounts
-  when: filesystem_expand_result.results | default([]) | selectattr('changed', 'equalto', true) | list | length > 0
+- name: Check filesystem usage and expand if needed
+  ansible.builtin.raw: |
+    LOG_FILE="{{ aix_log_dir }}/filesystem_$(hostname)_$(date +%Y%m%d).log"
+    CONFIG_FILE="{{ filesystem_config_file }}"
+    INCREMENT_PERCENT="{{ filesystem_increment_percent | default(2) }}"
+    
+    echo "Starting filesystem monitoring..." >> "$LOG_FILE"
+    EXPANDED_COUNT=0
+    
+    if [ -f "$CONFIG_FILE" ]; then
+      while read filesystem threshold; do
+        # Skip empty lines and comments
+        [ -z "$filesystem" ] && continue
+        echo "$filesystem" | grep -q "^#" && continue
+        
+        # Get current usage
+        USAGE=$(df -kI "$filesystem" 2>/dev/null | tail -n +2 | awk '{print $5}' | cut -d '%' -f 1)
+        
+        if [ -n "$USAGE" ] && [ "$USAGE" -gt "$threshold" ]; then
+          echo "$(date): Filesystem $filesystem usage ${USAGE}% exceeds threshold ${threshold}%" >> "$LOG_FILE"
+          
+          # Calculate increment size in MB
+          CURRENT_SIZE_KB=$(df -kI "$filesystem" | tail -n +2 | awk '{print $2}')
+          INCREMENT_MB=$(( (CURRENT_SIZE_KB * INCREMENT_PERCENT / 100) / 1024 ))
+          
+          # Log before expansion
+          echo "Attempting to expand $filesystem by ${INCREMENT_MB}MB" >> "$LOG_FILE"
+          echo "Before expansion:" >> "$LOG_FILE"
+          df -Ig "$filesystem" >> "$LOG_FILE"
+          
+          # Expand filesystem
+          if chfs -a size=+${INCREMENT_MB}M "$filesystem" 2>&1 >> "$LOG_FILE"; then
+            echo "Successfully expanded $filesystem by ${INCREMENT_MB}MB" >> "$LOG_FILE"
+            
+            # Verify expansion
+            sleep 2
+            NEW_USAGE=$(df -kI "$filesystem" | tail -n +2 | awk '{print $5}' | cut -d '%' -f 1)
+            echo "After expansion:" >> "$LOG_FILE"
+            df -Ig "$filesystem" >> "$LOG_FILE"
+            echo "New usage: ${NEW_USAGE}%" >> "$LOG_FILE"
+            echo "Recommended Action: No response action is required." >> "$LOG_FILE"
+            
+            EXPANDED_COUNT=$((EXPANDED_COUNT + 1))
+          else
+            echo "Failed to expand $filesystem" >> "$LOG_FILE"
+            echo "Recommended Action: Please call EIS Unix-Linux Admin Team for review" >> "$LOG_FILE"
+          fi
+          echo "" >> "$LOG_FILE"
+        else
+          echo "$(date): Filesystem $filesystem usage ${USAGE}% within threshold ${threshold}%" >> "$LOG_FILE"
+        fi
+      done < "$CONFIG_FILE"
+    else
+      echo "Configuration file $CONFIG_FILE not found" >> "$LOG_FILE"
+    fi
+    
+    echo "---------------------- By EIS Command Center ----------------------" >> "$LOG_FILE"
+    echo "Filesystem monitoring completed. Expanded $EXPANDED_COUNT filesystems." >> "$LOG_FILE"
+    
+    # Output result for Ansible
+    echo "EXPANDED_FILESYSTEMS=$EXPANDED_COUNT"
+  register: filesystem_monitoring
+  changed_when: "'EXPANDED_FILESYSTEMS=' in filesystem_monitoring.stdout and filesystem_monitoring.stdout.split('EXPANDED_FILESYSTEMS=')[1].split()[0] != '0'"
   tags:
     - filesystem
-    - verify
+    - monitoring
 
-- name: Get updated filesystem status using df command
-  ansible.builtin.shell: |
-    df -Ig {{ item.item.item.item.item.filesystem }}
-  register: filesystem_status_after
-  loop: "{{ filesystem_expand_result.results | default([]) }}"
-  when: 
-    - item.changed is defined
-    - item.changed | bool
-    - not (item.failed | default(false))
-  changed_when: false
-  tags:
-    - filesystem
-    - verify
-
-- name: Append filesystem status to log
-  ansible.builtin.lineinfile:
-    path: "{{ filesystem_log_file }}"
-    line: |
-      {{ item.stdout }}
-      Recommended Action: No response action is required.
-    mode: '0644'
-  loop: "{{ filesystem_status_after.results | default([]) }}"
-  when: item.stdout is defined
-  tags:
-    - filesystem
-    - logging
-
-- name: Send success notification email
-  community.general.mail:
-    host: "{{ smtp_host }}"
-    port: "{{ smtp_port }}"
-    username: "{{ smtp_user }}"
-    password: "{{ smtp_pass }}"
-    to: "{{ alert_emails }}"
-    subject: "EIS Command Center (Unix-Linux Team): Filesystem {{ item.item.item.item.item.filesystem }} on {{ ansible_hostname }} increased by {{ item.item.ansible_facts.filesystem_increment_mb }}MB"
-    body: "{{ lookup('file', filesystem_log_file) }}"
-  loop: "{{ filesystem_expand_result.results | default([]) }}"
-  when: 
-    - item.changed is defined
-    - item.changed | bool
-    - not (item.failed | default(false))
-    - alert_emails is defined
+- name: Send email notification if filesystems were expanded
+  ansible.builtin.raw: |
+    LOG_FILE="{{ aix_log_dir }}/filesystem_$(hostname)_$(date +%Y%m%d).log"
+    
+    if [ -n "{{ alert_emails | default('') }}" ] && [ -n "{{ smtp_host | default('') }}" ]; then
+      SUBJECT="EIS Command Center (Unix-Linux Team): Filesystem monitoring completed on $(hostname)"
+      
+      # Send email (basic implementation)
+      if command -v mail >/dev/null 2>&1; then
+        mail -s "$SUBJECT" "{{ alert_emails | join(',') }}" < "$LOG_FILE" 2>/dev/null || echo "Failed to send email notification" >> "$LOG_FILE"
+      else
+        echo "Mail command not available - skipping email notification" >> "$LOG_FILE"
+      fi
+    fi
+  when: filesystem_monitoring.changed
+  failed_when: false
   tags:
     - filesystem
     - notification
 
-- name: Handle filesystem expansion failure
-  block:
-    - name: Log filesystem expansion failure
-      ansible.builtin.template:
-        src: filesystem_error.j2
-        dest: "{{ filesystem_error_log }}"
-        mode: '0644'
-      vars:
-        error_filesystem: "{{ item.item.item.item.item.filesystem }}"
-        error_usage: "{{ item.item.item.stdout }}"
-        error_threshold: "{{ item.item.item.item.threshold }}"
-    
-    - name: Send failure notification email
-      community.general.mail:
-        host: "{{ smtp_host }}"
-        port: "{{ smtp_port }}"
-        username: "{{ smtp_user }}"
-        password: "{{ smtp_pass }}"
-        to: "{{ alert_emails }}"
-        subject: "EIS Command Center (Unix-Linux Team): WARNING - Filesystem {{ item.item.item.item.item.filesystem }} on {{ ansible_hostname }} over limit and expansion failed"
-        body: "{{ lookup('file', filesystem_error_log) }}"
-      when: alert_emails is defined
-  
-  loop: "{{ filesystem_expand_result.results | default([]) }}"
-  when: 
-    - item.failed is defined
-    - item.failed | bool
+- name: Display filesystem monitoring results
+  ansible.builtin.debug:
+    msg: |
+      Filesystem monitoring completed on {{ ansible_hostname }}
+      {% if filesystem_monitoring.changed %}
+      Filesystems expanded: {{ filesystem_monitoring.stdout.split('EXPANDED_FILESYSTEMS=')[1].split()[0] if 'EXPANDED_FILESYSTEMS=' in filesystem_monitoring.stdout else '0' }}
+      {% else %}
+      No filesystems required expansion
+      {% endif %}
+      Log file: {{ aix_log_dir }}/filesystem_$(hostname)_$(date +%Y%m%d).log
   tags:
     - filesystem
-    - error_handling
+    - results

@@ -1,149 +1,166 @@
 ---
-# Main tasks for memory management
+# Main tasks for memory management using direct SSH commands
 
 - name: Ensure log directory exists
-  ansible.builtin.file:
-    path: "{{ aix_log_dir }}"
-    state: directory
-    mode: '0755'
+  ansible.builtin.raw: |
+    [ -d "{{ aix_log_dir }}" ] || mkdir -p "{{ aix_log_dir }}"
+    chmod 755 "{{ aix_log_dir }}"
+  changed_when: false
   tags:
     - memory
     - setup
 
-- name: Check current paging space usage
-  ansible.builtin.shell: |
-    lsps -a | tail -1 | awk '{print $5}' | sed 's/%//'
-  register: paging_usage_result
+- name: Get current paging space usage
+  ansible.builtin.raw: |
+    # Get paging space usage percentage
+    PAGING_USAGE=$(lsps -a 2>/dev/null | tail -1 | awk '{print $5}' | sed 's/%//' || echo "0")
+    
+    # Get current memory configuration
+    MEMORY_INFO=$(prtconf -m 2>/dev/null || echo "Unable to retrieve memory information")
+    
+    echo "PAGING_USAGE=$PAGING_USAGE"
+    echo "MEMORY_INFO_START"
+    echo "$MEMORY_INFO"
+    echo "MEMORY_INFO_END"
+  register: memory_status
   changed_when: false
   tags:
     - memory
     - monitoring
 
-- name: Set paging usage fact
-  ansible.builtin.set_fact:
-    paging_usage: "{{ paging_usage_result.stdout | int }}"
+- name: Initialize memory monitoring log
+  ansible.builtin.raw: |
+    LOG_FILE="{{ aix_log_dir }}/memory_autojob_$(hostname)_$(date +%Y%m%d).log"
+    echo "=============================== MEMORY AUTO-SCALING MONITORING ===============================" > "$LOG_FILE"
+    echo "Date: $(date)" >> "$LOG_FILE"
+    echo "Hostname: $(hostname)" >> "$LOG_FILE"
+    echo "Change Ticket: {{ change_ticket | default('AUTO') }}" >> "$LOG_FILE"
+    echo "Change Reason: {{ change_reason | default('Automated memory scaling via AAP') }}" >> "$LOG_FILE"
+    echo "" >> "$LOG_FILE"
+    echo "Current paging space usage: {{ memory_status.stdout_lines | select('match', '^PAGING_USAGE=') | first | regex_replace('PAGING_USAGE=', '') }}%" >> "$LOG_FILE"
+    echo "Threshold: {{ memory_threshold | default(10) }}%" >> "$LOG_FILE"
+    echo "" >> "$LOG_FILE"
+  register: memory_log_init
+  changed_when: false
   tags:
     - memory
-    - monitoring
+    - logging
 
-- name: Check if memory threshold exceeded
-  ansible.builtin.set_fact:
-    memory_threshold_exceeded: "{{ paging_usage | int > memory_threshold | int }}"
+- name: Check if memory scaling is needed and execute
+  ansible.builtin.raw: |
+    LOG_FILE="{{ aix_log_dir }}/memory_autojob_$(hostname)_$(date +%Y%m%d).log"
+    MEMORY_THRESHOLD="{{ memory_threshold | default(10) }}"
+    HMC_HOST="{{ hmc_host | default('') }}"
+    HMC_USER="{{ hmc_user | default('') }}"
+    HMC_MANAGED_SYSTEM="{{ hmc_managed_system_memory | default(hmc_managed_system) | default('') }}"
+    HMC_PARTITION_NAME="{{ hmc_partition_name_memory | default(hmc_partition_name) | default('') }}"
+    MEMORY_INCREMENT="{{ memory_increment_mb | default(512) }}"
+    HMC_TIMEOUT="{{ hmc_timeout | default(30) }}"
+    
+    # Extract current paging usage
+    CURRENT_PAGING="{{ memory_status.stdout_lines | select('match', '^PAGING_USAGE=') | first | regex_replace('PAGING_USAGE=', '') }}"
+    
+    echo "Checking if memory scaling is needed..." >> "$LOG_FILE"
+    echo "Current Paging Usage: $CURRENT_PAGING%, Threshold: $MEMORY_THRESHOLD%" >> "$LOG_FILE"
+    
+    if [ "$CURRENT_PAGING" -gt "$MEMORY_THRESHOLD" ] && [ -n "$HMC_HOST" ] && [ -n "$HMC_USER" ] && [ -n "$HMC_MANAGED_SYSTEM" ] && [ -n "$HMC_PARTITION_NAME" ]; then
+      echo "Paging usage $CURRENT_PAGING% exceeds threshold $MEMORY_THRESHOLD% - initiating memory scaling" >> "$LOG_FILE"
+      
+      # Get current memory configuration before addition
+      echo "Host $(hostname) memory < before add memory >" >> "$LOG_FILE"
+      prtconf -m >> "$LOG_FILE" 2>/dev/null || echo "Unable to retrieve memory information" >> "$LOG_FILE"
+      echo "Auto increase memory $MEMORY_INCREMENT MB to $(hostname)" >> "$LOG_FILE"
+      echo "" >> "$LOG_FILE"
+      
+      # Add memory via HMC
+      HMC_COMMAND="chhwres -r mem -m $HMC_MANAGED_SYSTEM -o a -p $HMC_PARTITION_NAME -q $MEMORY_INCREMENT"
+      echo "Executing HMC command: $HMC_COMMAND" >> "$LOG_FILE"
+      
+      if timeout "$HMC_TIMEOUT" ssh "$HMC_USER@$HMC_HOST" "$HMC_COMMAND" 2>&1 >> "$LOG_FILE"; then
+        echo "HMC command executed successfully" >> "$LOG_FILE"
+        
+        # Wait for changes to take effect
+        sleep 5
+        
+        # Get updated memory configuration
+        echo "Host $(hostname) memory < after add memory >" >> "$LOG_FILE"
+        prtconf -m >> "$LOG_FILE" 2>/dev/null || echo "Unable to retrieve memory information" >> "$LOG_FILE"
+        echo "" >> "$LOG_FILE"
+        echo "Recommended Action: If memory size increased, No response action is required." >> "$LOG_FILE"
+        echo "Recommended Action: If memory size still same before/after, Please call to EIS Unix-Linux Admin Team for review" >> "$LOG_FILE"
+        echo "" >> "$LOG_FILE"
+        echo "---------------------- By EIS Command Center ----------------------" >> "$LOG_FILE"
+        
+        echo "MEMORY_SCALED=YES"
+      else
+        echo "" >> "$LOG_FILE"
+        echo "--- Memory Addition Failed ---" >> "$LOG_FILE"
+        echo "Error: Unable to add memory via HMC" >> "$LOG_FILE"
+        echo "HMC Command: ssh $HMC_USER@$HMC_HOST \"$HMC_COMMAND\"" >> "$LOG_FILE"
+        echo "" >> "$LOG_FILE"
+        echo "Recommended Action: Please call EIS Unix-Linux Admin Team for review" >> "$LOG_FILE"
+        echo "" >> "$LOG_FILE"
+        echo "---------------------- By EIS Command Center ----------------------" >> "$LOG_FILE"
+        
+        echo "MEMORY_SCALED=FAILED"
+      fi
+    else
+      if [ "$CURRENT_PAGING" -le "$MEMORY_THRESHOLD" ]; then
+        echo "Paging usage $CURRENT_PAGING% within threshold $MEMORY_THRESHOLD% - no scaling needed" >> "$LOG_FILE"
+      else
+        echo "HMC configuration incomplete - cannot perform memory scaling" >> "$LOG_FILE"
+        echo "Required: HMC_HOST, HMC_USER, HMC_MANAGED_SYSTEM, HMC_PARTITION_NAME" >> "$LOG_FILE"
+      fi
+      echo "MEMORY_SCALED=NO"
+    fi
+  register: memory_scaling
+  changed_when: "'MEMORY_SCALED=YES' in memory_scaling.stdout"
+  failed_when: "'MEMORY_SCALED=FAILED' in memory_scaling.stdout"
   tags:
     - memory
-    - monitoring
+    - scaling
 
-- name: Display memory status
+- name: Send email notification if memory was scaled
+  ansible.builtin.raw: |
+    LOG_FILE="{{ aix_log_dir }}/memory_autojob_$(hostname)_$(date +%Y%m%d).log"
+    
+    if [ -n "{{ alert_emails | default('') }}" ] && [ -n "{{ smtp_host | default('') }}" ]; then
+      {% if memory_scaling.changed %}
+      SUBJECT="EIS Command Center (Unix-Linux Team): Memory auto-scaling successful on $(hostname)"
+      {% elif memory_scaling.failed %}
+      SUBJECT="EIS Command Center (Unix-Linux Team): FAILED - Memory auto-scaling failed on $(hostname)"
+      {% else %}
+      SUBJECT=""
+      {% endif %}
+      
+      if [ -n "$SUBJECT" ]; then
+        if command -v mail >/dev/null 2>&1; then
+          mail -s "$SUBJECT" "{{ alert_emails | join(',') }}" < "$LOG_FILE" 2>/dev/null || echo "Failed to send email notification" >> "$LOG_FILE"
+        else
+          echo "Mail command not available - skipping email notification" >> "$LOG_FILE"
+        fi
+      fi
+    fi
+  when: memory_scaling.changed or memory_scaling.failed
+  failed_when: false
+  tags:
+    - memory
+    - notification
+
+- name: Display memory monitoring results
   ansible.builtin.debug:
     msg: |
-      Current Paging Usage: {{ paging_usage }}%
-      Threshold: {{ memory_threshold }}%
-      Threshold Exceeded: {{ memory_threshold_exceeded }}
+      Memory monitoring completed on {{ ansible_hostname }}
+      Current Paging Usage: {{ memory_status.stdout_lines | select('match', '^PAGING_USAGE=') | first | regex_replace('PAGING_USAGE=', '') }}%
+      Threshold: {{ memory_threshold | default(10) }}%
+      {% if memory_scaling.changed %}
+      Status: Memory scaled successfully
+      {% elif memory_scaling.failed %}
+      Status: Memory scaling failed
+      {% else %}
+      Status: No scaling required
+      {% endif %}
+      Log file: {{ aix_log_dir }}/memory_autojob_$(hostname)_$(date +%Y%m%d).log
   tags:
     - memory
-    - monitoring
-
-- name: Memory auto-scaling block
-  block:
-    - name: Create memory alert log header
-      ansible.builtin.template:
-        src: memory_alert_header.j2
-        dest: "{{ memory_log_file }}"
-        mode: '0644'
-    
-    - name: Get current memory configuration (before)
-      ansible.builtin.shell: |
-        prtconf -m
-      register: memory_before
-      changed_when: false
-    
-    - name: Log memory status before addition
-      ansible.builtin.lineinfile:
-        path: "{{ memory_log_file }}"
-        line: |
-          Host {{ ansible_hostname }} memory < before add memory >
-          {{ memory_before.stdout }}
-          Auto increase memory {{ memory_increment_mb }} MB to {{ ansible_hostname }}
-        mode: '0644'
-    
-    - name: Add memory via HMC
-      ansible.builtin.shell: |
-        ssh {{ hmc_user }}@{{ hmc_host }} "chhwres -r mem -m {{ hmc_managed_system_memory }} -o a -p {{ hmc_partition_name_memory }} -q {{ memory_increment_mb }}"
-      register: hmc_memory_add_result
-      timeout: "{{ hmc_timeout }}"
-      ignore_errors: true
-    
-    - name: Wait for memory addition to take effect
-      ansible.builtin.pause:
-        seconds: 5
-      when: hmc_memory_add_result.rc == 0
-    
-    - name: Get current memory configuration (after)
-      ansible.builtin.shell: |
-        prtconf -m
-      register: memory_after
-      changed_when: false
-      when: hmc_memory_add_result.rc == 0
-    
-    - name: Log successful memory addition
-      ansible.builtin.lineinfile:
-        path: "{{ memory_log_file }}"
-        line: |
-          Host {{ ansible_hostname }} memory < after add memory >
-          {{ memory_after.stdout }}
-          
-          Recommended Action: If memory size increased, No response action is required.
-          Recommended Action: If memory size still same before/after, Please call to EIS Unix-Linux Admin Team for review
-          
-          ---------------------- By EIS Command Center ----------------------
-        mode: '0644'
-      when: hmc_memory_add_result.rc == 0
-    
-    - name: Send success notification email
-      community.general.mail:
-        host: "{{ smtp_host }}"
-        port: "{{ smtp_port }}"
-        username: "{{ smtp_user }}"
-        password: "{{ smtp_pass }}"
-        to: "{{ alert_emails }}"
-        subject: "{{ memory_success_subject }}"
-        body: "{{ lookup('file', memory_log_file) }}"
-      when: 
-        - hmc_memory_add_result.rc == 0
-        - alert_emails is defined
-    
-    - name: Handle memory addition failure
-      block:
-        - name: Log memory addition failure
-          ansible.builtin.lineinfile:
-            path: "{{ memory_log_file }}"
-            line: |
-              
-              --- Memory Addition Failed ---
-              Error: Unable to add memory via HMC
-              Current Memory: {{ memory_before.stdout }}
-              
-              Recommended Action: Please call EIS Unix-Linux Admin Team for review
-              
-              ---------------------- By EIS Command Center ----------------------
-            mode: '0644'
-        
-        - name: Send failure notification email
-          community.general.mail:
-            host: "{{ smtp_host }}"
-            port: "{{ smtp_port }}"
-            username: "{{ smtp_user }}"
-            password: "{{ smtp_pass }}"
-            to: "{{ alert_emails }}"
-            subject: "EIS Command Center (Unix-Linux Team): FAILED - Memory auto-scaling failed on {{ ansible_hostname }}"
-            body: "{{ lookup('file', memory_log_file) }}"
-          when: alert_emails is defined
-      
-      when: hmc_memory_add_result.rc != 0
-  
-  when: 
-    - memory_threshold_exceeded | bool
-    - memory_auto_scaling_enabled | bool
-  tags:
-    - memory
-    - autoscaling
+    - results

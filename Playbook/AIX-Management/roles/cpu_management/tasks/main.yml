@@ -1,210 +1,186 @@
 ---
-# Main tasks for CPU management using IBM Power AIX collection where possible
+# Main tasks for CPU management using direct SSH commands
 
 - name: Ensure log directory exists
-  ansible.builtin.file:
-    path: "{{ aix_log_dir }}"
-    state: directory
-    mode: '0755'
+  ansible.builtin.raw: |
+    [ -d "{{ aix_log_dir }}" ] || mkdir -p "{{ aix_log_dir }}"
+    chmod 755 "{{ aix_log_dir }}"
+  changed_when: false
   tags:
     - cpu
     - setup
 
-- name: Gather LPAR facts using IBM AIX module
-  ibm.power_aix.lpar_facts:
-  register: lpar_info
-  tags:
-    - cpu
-    - facts
-
-- name: Get current CPU load average
-  ansible.builtin.shell: |
-    uptime | awk '{print $10}' | cut -f 1 -d ','
-  register: current_cpu_load
+- name: Get current CPU load and system info
+  ansible.builtin.raw: |
+    # Get current load average (15-minute)
+    LOAD_AVG=$(uptime | awk '{print $12}' | tr -d ',' 2>/dev/null || echo "0")
+    
+    # Get current virtual CPU count
+    CPU_COUNT=$(lparstat -i 2>/dev/null | grep 'Online Virtual CPUs' | awk '{print $NF}' || nproc 2>/dev/null || echo "Unknown")
+    
+    # Get uptime info
+    UPTIME_INFO=$(uptime)
+    
+    echo "CURRENT_LOAD=$LOAD_AVG"
+    echo "CPU_COUNT=$CPU_COUNT" 
+    echo "UPTIME_INFO=$UPTIME_INFO"
+  register: cpu_status
   changed_when: false
   tags:
     - cpu
     - monitoring
 
-- name: Convert load average to integer for comparison
-  ansible.builtin.set_fact:
-    cpu_load_int: "{{ (current_cpu_load.stdout | float * 100) | int }}"
-  tags:
-    - cpu
-    - monitoring
-
-- name: Check if CPU load exceeds threshold
-  ansible.builtin.set_fact:
-    cpu_threshold_exceeded: "{{ cpu_load_int | int > (cpu_load_threshold * 100) | int }}"
-  tags:
-    - cpu
-    - monitoring
-
-- name: Display CPU status
-  ansible.builtin.debug:
-    msg: |
-      Current CPU Load: {{ current_cpu_load.stdout }}
-      Threshold: {{ cpu_load_threshold }}
-      Threshold Exceeded: {{ cpu_threshold_exceeded }}
-      Current Online Virtual CPUs: {{ lpar_info.ansible_facts.lpar_info.online_virtual_cpus | default('N/A') }}
-  tags:
-    - cpu
-    - monitoring
-
-- name: CPU auto-scaling block
-  block:
-    - name: Log CPU alert start
-      ansible.builtin.template:
-        src: cpu_alert_header.j2
-        dest: "{{ cpu_autojob_log_file }}"
-        mode: '0644'
-    
-    - name: Get current Virtual CPU count using IBM AIX module
-      ansible.builtin.set_fact:
-        cpu_count_before: "{{ lpar_info.ansible_facts.lpar_info.online_virtual_cpus | default('Unknown') }}"
-    
-    - name: Get current Virtual CPU count using lparstat (fallback)
-      ansible.builtin.shell: |
-        lparstat -i | grep 'Online Virtual CPUs' | awk '{print $NF}'
-      register: cpu_count_before_fallback
-      changed_when: false
-      when: lpar_info.ansible_facts.lpar_info.online_virtual_cpus is not defined
-    
-    - name: Set CPU count before (using fallback if needed)
-      ansible.builtin.set_fact:
-        cpu_count_before: "{{ cpu_count_before_fallback.stdout if cpu_count_before_fallback.stdout is defined else cpu_count_before }}"
-      when: cpu_count_before_fallback.stdout is defined
-    
-    - name: Log current system status
-      ansible.builtin.lineinfile:
-        path: "{{ cpu_autojob_log_file }}"
-        line: |
-          System uptime: {{ current_cpu_load.stdout }}
-          --- Show Virtual CPUs (before automatic add) ---
-          Online Virtual CPUs: {{ cpu_count_before }}
-        mode: '0644'
-    
-    - name: Add virtual CPU via HMC
-      ansible.builtin.shell: |
-        ssh {{ hmc_user }}@{{ hmc_host }} "chhwres -r proc -m {{ hmc_managed_system }} -o a -p {{ hmc_partition_name }} --procs {{ cpu_increment_count }}"
-      register: hmc_cpu_add_result
-      timeout: "{{ hmc_timeout }}"
-      ignore_errors: true
-    
-    - name: Wait for CPU addition to take effect
-      ansible.builtin.pause:
-        seconds: 5
-      when: hmc_cpu_add_result.rc == 0
-    
-    - name: Refresh LPAR facts after CPU addition
-      ibm.power_aix.lpar_facts:
-      register: lpar_info_after
-      when: hmc_cpu_add_result.rc == 0
-    
-    - name: Get current Virtual CPU count (after) using IBM AIX module
-      ansible.builtin.set_fact:
-        cpu_count_after: "{{ lpar_info_after.ansible_facts.lpar_info.online_virtual_cpus | default('Unknown') }}"
-      when: 
-        - hmc_cpu_add_result.rc == 0
-        - lpar_info_after.ansible_facts.lpar_info.online_virtual_cpus is defined
-    
-    - name: Get current Virtual CPU count (after) using lparstat (fallback)
-      ansible.builtin.shell: |
-        lparstat -i | grep 'Online Virtual CPUs' | awk '{print $NF}'
-      register: cpu_count_after_fallback
-      changed_when: false
-      when: 
-        - hmc_cpu_add_result.rc == 0
-        - (cpu_count_after is not defined or cpu_count_after == 'Unknown')
-    
-    - name: Set CPU count after (using fallback if needed)
-      ansible.builtin.set_fact:
-        cpu_count_after: "{{ cpu_count_after_fallback.stdout if cpu_count_after_fallback.stdout is defined else cpu_count_after | default('Unknown') }}"
-      when: 
-        - hmc_cpu_add_result.rc == 0
-        - cpu_count_after_fallback.stdout is defined
-    
-    - name: Get updated system load
-      ansible.builtin.shell: |
-        uptime
-      register: uptime_after
-      changed_when: false
-      when: hmc_cpu_add_result.rc == 0
-    
-    - name: Log successful CPU addition
-      ansible.builtin.lineinfile:
-        path: "{{ cpu_autojob_log_file }}"
-        line: |
-          
-          {{ ansible_date_time.iso8601 }}
-          System uptime: {{ uptime_after.stdout }}
-          --- Show Virtual CPUs (after automatic add) ---
-          Online Virtual CPUs: {{ cpu_count_after }}
-          
-          Recommended Action: No response action is required.
-          
-          ---------------------- By EIS Command Center ----------------------
-        mode: '0644'
-      when: hmc_cpu_add_result.rc == 0
-    
-    - name: Send success notification email
-      community.general.mail:
-        host: "{{ smtp_host }}"
-        port: "{{ smtp_port }}"
-        username: "{{ smtp_user }}"
-        password: "{{ smtp_pass }}"
-        to: "{{ alert_emails }}"
-        subject: "{{ cpu_success_subject }}"
-        body: "{{ lookup('file', cpu_autojob_log_file) }}"
-      when: 
-        - hmc_cpu_add_result.rc == 0
-        - alert_emails is defined
-    
-    - name: Handle CPU addition failure
-      block:
-        - name: Log CPU addition failure
-          ansible.builtin.lineinfile:
-            path: "{{ cpu_autojob_log_file }}"
-            line: |
-              
-              --- CPU Addition Failed ---
-              Error: Unable to add virtual CPU via HMC
-              HMC Command: ssh {{ hmc_user }}@{{ hmc_host }} "chhwres -r proc -m {{ hmc_managed_system }} -o a -p {{ hmc_partition_name }} --procs {{ cpu_increment_count }}"
-              Error Output: {{ hmc_cpu_add_result.stderr | default('No error details available') }}
-              Current Virtual CPUs: {{ cpu_count_before }}
-              
-              Recommended Action: Please call EIS Unix-Linux Admin Team for review
-              
-              ---------------------- By EIS Command Center ----------------------
-            mode: '0644'
-        
-        - name: Send failure notification email
-          community.general.mail:
-            host: "{{ smtp_host }}"
-            port: "{{ smtp_port }}"
-            username: "{{ smtp_user }}"
-            password: "{{ smtp_pass }}"
-            to: "{{ alert_emails }}"
-            subject: "EIS Command Center (Unix-Linux Team): FAILED - CPU auto-scaling failed on {{ ansible_hostname }}"
-            body: "{{ lookup('file', cpu_autojob_log_file) }}"
-          when: alert_emails is defined
-      
-      when: hmc_cpu_add_result.rc != 0
-  
-  when: 
-    - cpu_threshold_exceeded | bool
-    - cpu_auto_scaling_enabled | bool
-  tags:
-    - cpu
-    - autoscaling
-
-- name: Log load average for monitoring
-  ansible.builtin.lineinfile:
-    path: "{{ cpu_load_log_file }}"
-    line: "{{ ansible_date_time.date }} - {{ ansible_date_time.time }}\tLoad Average {{ current_cpu_load.stdout }}"
-    create: true
-    mode: '0644'
-  when: cpu_threshold_exceeded | bool
+- name: Initialize CPU monitoring log
+  ansible.builtin.raw: |
+    LOG_FILE="{{ aix_log_dir }}/cpu_autojob_$(hostname)_$(date +%Y%m%d).log"
+    echo "=============================== CPU AUTO-SCALING MONITORING ===============================" > "$LOG_FILE"
+    echo "Date: $(date)" >> "$LOG_FILE"
+    echo "Hostname: $(hostname)" >> "$LOG_FILE"
+    echo "Change Ticket: {{ change_ticket | default('AUTO') }}" >> "$LOG_FILE"
+    echo "Change Reason: {{ change_reason | default('Automated CPU scaling via AAP') }}" >> "$LOG_FILE"
+    echo "" >> "$LOG_FILE"
+    echo "Current system status:" >> "$LOG_FILE"
+    echo "{{ cpu_status.stdout | select('match', 'UPTIME_INFO=') | first | regex_replace('UPTIME_INFO=', '') }}" >> "$LOG_FILE"
+    echo "Load Average: {{ cpu_status.stdout | select('match', 'CURRENT_LOAD=') | first | regex_replace('CURRENT_LOAD=', '') }}" >> "$LOG_FILE"
+    echo "Online Virtual CPUs: {{ cpu_status.stdout | select('match', 'CPU_COUNT=') | first | regex_replace('CPU_COUNT=', '') }}" >> "$LOG_FILE"
+    echo "Load Threshold: {{ cpu_load_threshold | default(5.0) }}" >> "$LOG_FILE"
+    echo "" >> "$LOG_FILE"
+  register: cpu_log_init
+  changed_when: false
   tags:
     - cpu
     - logging
+
+- name: Check if CPU scaling is needed and execute
+  ansible.builtin.raw: |
+    LOG_FILE="{{ aix_log_dir }}/cpu_autojob_$(hostname)_$(date +%Y%m%d).log"
+    LOAD_THRESHOLD="{{ cpu_load_threshold | default(5.0) }}"
+    HMC_HOST="{{ hmc_host | default('') }}"
+    HMC_USER="{{ hmc_user | default('') }}"
+    HMC_MANAGED_SYSTEM="{{ hmc_managed_system | default('') }}"
+    HMC_PARTITION_NAME="{{ hmc_partition_name | default('') }}"
+    CPU_INCREMENT="{{ cpu_increment_count | default(1) }}"
+    HMC_TIMEOUT="{{ hmc_timeout | default(30) }}"
+    
+    # Extract current load
+    CURRENT_LOAD="{{ cpu_status.stdout | select('match', 'CURRENT_LOAD=') | first | regex_replace('CURRENT_LOAD=', '') }}"
+    CPU_BEFORE="{{ cpu_status.stdout | select('match', 'CPU_COUNT=') | first | regex_replace('CPU_COUNT=', '') }}"
+    
+    echo "Checking if CPU scaling is needed..." >> "$LOG_FILE"
+    echo "Current Load: $CURRENT_LOAD, Threshold: $LOAD_THRESHOLD" >> "$LOG_FILE"
+    
+    # Compare load with threshold (using bc if available, otherwise basic comparison)
+    SCALE_NEEDED=0
+    if command -v bc >/dev/null 2>&1; then
+      SCALE_NEEDED=$(echo "$CURRENT_LOAD > $LOAD_THRESHOLD" | bc -l 2>/dev/null || echo 0)
+    else
+      # Basic integer comparison (multiply by 100 for decimal handling)
+      LOAD_INT=$(echo "$CURRENT_LOAD * 100" | awk '{print int($1)}' 2>/dev/null || echo 0)
+      THRESHOLD_INT=$(echo "$LOAD_THRESHOLD * 100" | awk '{print int($1)}' 2>/dev/null || echo 500)
+      [ "$LOAD_INT" -gt "$THRESHOLD_INT" ] && SCALE_NEEDED=1
+    fi
+    
+    if [ "$SCALE_NEEDED" = "1" ] && [ -n "$HMC_HOST" ] && [ -n "$HMC_USER" ] && [ -n "$HMC_MANAGED_SYSTEM" ] && [ -n "$HMC_PARTITION_NAME" ]; then
+      echo "CPU load $CURRENT_LOAD exceeds threshold $LOAD_THRESHOLD - initiating scaling" >> "$LOG_FILE"
+      echo "--- Show Virtual CPUs (before automatic add) ---" >> "$LOG_FILE"
+      echo "Online Virtual CPUs: $CPU_BEFORE" >> "$LOG_FILE"
+      echo "" >> "$LOG_FILE"
+      
+      # Add virtual CPU via HMC
+      HMC_COMMAND="chhwres -r proc -m $HMC_MANAGED_SYSTEM -o a -p $HMC_PARTITION_NAME --procs $CPU_INCREMENT"
+      echo "Executing HMC command: $HMC_COMMAND" >> "$LOG_FILE"
+      
+      if timeout "$HMC_TIMEOUT" ssh "$HMC_USER@$HMC_HOST" "$HMC_COMMAND" 2>&1 >> "$LOG_FILE"; then
+        echo "HMC command executed successfully" >> "$LOG_FILE"
+        
+        # Wait for changes to take effect
+        sleep 5
+        
+        # Get updated CPU count and uptime
+        CPU_AFTER=$(lparstat -i 2>/dev/null | grep 'Online Virtual CPUs' | awk '{print $NF}' || nproc 2>/dev/null || echo "Unknown")
+        UPTIME_AFTER=$(uptime)
+        
+        echo "" >> "$LOG_FILE"
+        echo "$(date)" >> "$LOG_FILE"
+        echo "System uptime: $UPTIME_AFTER" >> "$LOG_FILE"
+        echo "--- Show Virtual CPUs (after automatic add) ---" >> "$LOG_FILE"
+        echo "Online Virtual CPUs: $CPU_AFTER" >> "$LOG_FILE"
+        echo "" >> "$LOG_FILE"
+        echo "Recommended Action: No response action is required." >> "$LOG_FILE"
+        echo "" >> "$LOG_FILE"
+        echo "---------------------- By EIS Command Center ----------------------" >> "$LOG_FILE"
+        
+        echo "CPU_SCALED=YES"
+      else
+        echo "" >> "$LOG_FILE"
+        echo "--- CPU Addition Failed ---" >> "$LOG_FILE"
+        echo "Error: Unable to add virtual CPU via HMC" >> "$LOG_FILE"
+        echo "HMC Command: ssh $HMC_USER@$HMC_HOST \"$HMC_COMMAND\"" >> "$LOG_FILE"
+        echo "Current Virtual CPUs: $CPU_BEFORE" >> "$LOG_FILE"
+        echo "" >> "$LOG_FILE"
+        echo "Recommended Action: Please call EIS Unix-Linux Admin Team for review" >> "$LOG_FILE"
+        echo "" >> "$LOG_FILE"
+        echo "---------------------- By EIS Command Center ----------------------" >> "$LOG_FILE"
+        
+        echo "CPU_SCALED=FAILED"
+      fi
+    else
+      if [ "$SCALE_NEEDED" != "1" ]; then
+        echo "CPU load $CURRENT_LOAD within threshold $LOAD_THRESHOLD - no scaling needed" >> "$LOG_FILE"
+      else
+        echo "HMC configuration incomplete - cannot perform CPU scaling" >> "$LOG_FILE"
+        echo "Required: HMC_HOST, HMC_USER, HMC_MANAGED_SYSTEM, HMC_PARTITION_NAME" >> "$LOG_FILE"
+      fi
+      echo "CPU_SCALED=NO"
+    fi
+  register: cpu_scaling
+  changed_when: "'CPU_SCALED=YES' in cpu_scaling.stdout"
+  failed_when: "'CPU_SCALED=FAILED' in cpu_scaling.stdout"
+  tags:
+    - cpu
+    - scaling
+
+- name: Send email notification if CPU was scaled
+  ansible.builtin.raw: |
+    LOG_FILE="{{ aix_log_dir }}/cpu_autojob_$(hostname)_$(date +%Y%m%d).log"
+    
+    if [ -n "{{ alert_emails | default('') }}" ] && [ -n "{{ smtp_host | default('') }}" ]; then
+      {% if cpu_scaling.changed %}
+      SUBJECT="EIS Command Center (Unix-Linux Team): CPU auto-scaling successful on $(hostname)"
+      {% elif cpu_scaling.failed %}
+      SUBJECT="EIS Command Center (Unix-Linux Team): FAILED - CPU auto-scaling failed on $(hostname)"
+      {% else %}
+      SUBJECT=""
+      {% endif %}
+      
+      if [ -n "$SUBJECT" ]; then
+        if command -v mail >/dev/null 2>&1; then
+          mail -s "$SUBJECT" "{{ alert_emails | join(',') }}" < "$LOG_FILE" 2>/dev/null || echo "Failed to send email notification" >> "$LOG_FILE"
+        else
+          echo "Mail command not available - skipping email notification" >> "$LOG_FILE"
+        fi
+      fi
+    fi
+  when: cpu_scaling.changed or cpu_scaling.failed
+  failed_when: false
+  tags:
+    - cpu
+    - notification
+
+- name: Display CPU monitoring results
+  ansible.builtin.debug:
+    msg: |
+      CPU monitoring completed on {{ ansible_hostname }}
+      Current Load: {{ cpu_status.stdout | select('match', 'CURRENT_LOAD=') | first | regex_replace('CURRENT_LOAD=', '') }}
+      Threshold: {{ cpu_load_threshold | default(5.0) }}
+      {% if cpu_scaling.changed %}
+      Status: CPU scaled successfully
+      {% elif cpu_scaling.failed %}
+      Status: CPU scaling failed
+      {% else %}
+      Status: No scaling required
+      {% endif %}
+      Log file: {{ aix_log_dir }}/cpu_autojob_$(hostname)_$(date +%Y%m%d).log
+  tags:
+    - cpu
+    - results

@@ -20,7 +20,8 @@
       "Bash(echo $HOME)",
       "WebFetch(domain:ibm.github.io)",
       "Bash(./build.sh)",
-      "Bash(timeout:*)"
+      "Bash(timeout:*)",
+      "Bash(find:*)"
     ],
     "deny": []
   },
