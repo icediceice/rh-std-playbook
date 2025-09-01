@@ -189,14 +189,14 @@
                     echo "" >> "$LOG_FILE"
                     echo "Creating pre-expansion backup metadata..." >> "$LOG_FILE"
                     cat >> "$BACKUP_LOG" << EOF
-========== Backup for $filesystem ==========
-Date: $(date)
-Filesystem: $filesystem
-Logical Volume: $LV_PATH
-Volume Group: $VG_NAME
-Pre-expansion size: $FS_INFO
-Expansion size: ${expand_by_gb}GB
-EOF
+        ========== Backup for $filesystem ==========
+        Date: $(date)
+        Filesystem: $filesystem
+        Logical Volume: $LV_PATH
+        Volume Group: $VG_NAME
+        Pre-expansion size: $FS_INFO
+        Expansion size: ${expand_by_gb}GB
+        EOF
                     
                     # Backup filesystem structure (metadata only for large filesystems)
                     find "$filesystem" -maxdepth 3 -type f -ls >> "$BACKUP_LOG" 2>/dev/null || echo "Partial backup listing completed" >> "$BACKUP_LOG"

@@ -74,7 +74,7 @@
       tags: always
     
     - name: Ensure log directory exists
-      ansible.builtin.raw: |\
+      ansible.builtin.raw: |
         [ -d "{{ aix_log_dir }}" ] || mkdir -p "{{ aix_log_dir }}"
         chmod 755 "{{ aix_log_dir }}"
       changed_when: false
