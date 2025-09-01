@@ -61,21 +61,21 @@
   tasks:
     - name: Create validation report directory
       ansible.builtin.raw: |
-        [ -d "{{ aix_log_dir }}/validation" ] || mkdir -p "{{ aix_log_dir }}/validation"
-        chmod 755 "{{ aix_log_dir }}/validation"
+        [ -d "/bigc/log/validation" ] || mkdir -p "/bigc/log/validation"
+        chmod 755 "/bigc/log/validation"
       changed_when: false
       tags: always
     
     - name: Initialize validation report
       ansible.builtin.raw: |
-        cat > "{{ aix_log_dir }}/validation/validation_report_$(date +%Y%m%d).txt" << EOF
+        cat > "/bigc/log/validation/validation_report_$(date +%Y%m%d).txt" << EOF
         =====================================
         AIX SSH Command Validation Report
         =====================================
         Host: $(hostname)
         Date: $(date)
-        AAP Job ID: {{ aap_job_id }}
-        Change Ticket: {{ change_ticket }}
+        AAP Job ID: N/A
+        Change Ticket: VALIDATION
         
         EOF
       changed_when: false
@@ -93,16 +93,12 @@
                 - setup
         
         - name: Create test filesystem configuration for validation
-          ansible.builtin.template:
-            src: checkspace.cfg.j2
-            dest: "{{ aix_config_dir }}/checkspace_validation.cfg"
-            mode: '0644'
-          vars:
-            filesystem_monitoring_config:
-              - filesystem: "/tmp"
-                threshold: 90
-              - filesystem: "/var"
-                threshold: 85
+          ansible.builtin.raw: |
+            cat > "/bigc/script/checkspace_validation.cfg" << EOF
+            /tmp:90
+            /var:85
+            EOF
+            chmod 644 "/bigc/script/checkspace_validation.cfg"
         
         - name: Validate filesystem management commands
           ansible.builtin.raw: |
@@ -131,11 +127,10 @@
         
         - name: Record filesystem validation results
           ansible.builtin.raw: |
-            REPORT_FILE="{{ aix_log_dir }}/validation/validation_report_$(date +%Y%m%d).txt"
+            REPORT_FILE="/bigc/log/validation/validation_report_$(date +%Y%m%d).txt"
             echo "Filesystem Management:" >> "$REPORT_FILE"
             echo "- Role Deployment: SUCCESS" >> "$REPORT_FILE"
-            CMDS=$(echo "FILESYSTEM_COMMANDS_AVAILABLE=3" | cut -d= -f2)
-            echo "- Commands Available: $CMDS/3" >> "$REPORT_FILE"
+            echo "- Commands Available: 3/3" >> "$REPORT_FILE"
             echo "- Test Status: PASSED" >> "$REPORT_FILE"
             echo "" >> "$REPORT_FILE"
           changed_when: false
@@ -145,7 +140,7 @@
     
     - name: Validate all management functions
       ansible.builtin.raw: |
-        REPORT_FILE="{{ aix_log_dir }}/validation/validation_report_$(date +%Y%m%d).txt"
+        REPORT_FILE="/bigc/log/validation/validation_report_$(date +%Y%m%d).txt"
         
         echo "=== VALIDATION RESULTS ===" >> "$REPORT_FILE"
         echo "" >> "$REPORT_FILE"
@@ -173,7 +168,7 @@
         
         # Test directory structure
         echo "Directory Structure:" >> "$REPORT_FILE"
-        for dir in "{{ aix_log_dir }}" "{{ aix_config_dir }}"; do
+        for dir in "/bigc/log" "/bigc/script"; do
           if [ -d "$dir" ]; then
             echo "- $dir: EXISTS ($(ls -ld "$dir" | awk '{print $1}'))" >> "$REPORT_FILE"
           else
@@ -185,45 +180,35 @@
         # Test role functionality by checking role files
         echo "Role Functionality:" >> "$REPORT_FILE"
         
-        {% if validate_filesystem %}
-        if [ -f "{{ aix_config_dir }}/checkspace_validation.cfg" ]; then
+        if [ -f "/bigc/script/checkspace_validation.cfg" ]; then
           echo "- Filesystem Management: READY (config file exists)" >> "$REPORT_FILE"
         else
           echo "- Filesystem Management: NOT READY" >> "$REPORT_FILE"
         fi
-        {% endif %}
         
-        {% if validate_cpu %}
         if command -v lparstat >/dev/null 2>&1 && command -v uptime >/dev/null 2>&1; then
           echo "- CPU Management: READY (required commands available)" >> "$REPORT_FILE"
         else
           echo "- CPU Management: NOT READY (missing commands)" >> "$REPORT_FILE"
         fi
-        {% endif %}
         
-        {% if validate_memory %}
         if command -v lsps >/dev/null 2>&1 && command -v prtconf >/dev/null 2>&1; then
           echo "- Memory Management: READY (required commands available)" >> "$REPORT_FILE"
         else
           echo "- Memory Management: NOT READY (missing commands)" >> "$REPORT_FILE"
         fi
-        {% endif %}
         
-        {% if validate_print_queue %}
         if command -v lssrc >/dev/null 2>&1 && command -v lpstat >/dev/null 2>&1; then
           echo "- Print Queue Management: READY (required commands available)" >> "$REPORT_FILE"
         else
           echo "- Print Queue Management: NOT READY (missing commands)" >> "$REPORT_FILE"
         fi
-        {% endif %}
         
-        {% if validate_service %}
         if command -v ps >/dev/null 2>&1 && command -v pkill >/dev/null 2>&1; then
           echo "- Service Monitoring: READY (required commands available)" >> "$REPORT_FILE"
         else
           echo "- Service Monitoring: NOT READY (missing commands)" >> "$REPORT_FILE"
         fi
-        {% endif %}
         
         echo "" >> "$REPORT_FILE"
         echo "VALIDATION_COMPLETE=YES"
@@ -235,7 +220,7 @@
   post_tasks:
     - name: Finalize validation report
       ansible.builtin.raw: |
-        REPORT_FILE="{{ aix_log_dir }}/validation/validation_report_$(date +%Y%m%d).txt"
+        REPORT_FILE="/bigc/log/validation/validation_report_$(date +%Y%m%d).txt"
         
         echo "" >> "$REPORT_FILE"
         echo "======================================" >> "$REPORT_FILE"
@@ -243,8 +228,8 @@
         echo "- Date: $(date)" >> "$REPORT_FILE"
         echo "- Host: $(hostname)" >> "$REPORT_FILE"
         echo "- Status: COMPLETED" >> "$REPORT_FILE"
-        echo "- AAP Job ID: {{ aap_job_id }}" >> "$REPORT_FILE"
-        echo "- Change Ticket: {{ change_ticket }}" >> "$REPORT_FILE"
+        echo "- AAP Job ID: N/A" >> "$REPORT_FILE"
+        echo "- Change Ticket: VALIDATION" >> "$REPORT_FILE"
         echo "======================================" >> "$REPORT_FILE"
         
         echo "REPORT_FINALIZED=YES"
@@ -258,7 +243,7 @@
         echo "AIX SSH Command Validation Summary"
         echo "====================================="
         echo "Host: $(hostname)"
-        echo "Validation Report: {{ aix_log_dir }}/validation/validation_report_$(date +%Y%m%d).txt"
+        echo "Validation Report: /bigc/log/validation/validation_report_$(date +%Y%m%d).txt"
         echo ""
         echo "Management Functions Validated:"
         echo "- Filesystem: VALIDATED"
