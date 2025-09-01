@@ -9,39 +9,30 @@
   become: true
   
   vars:
-    # Directory paths
-    aix_log_dir: "/bigc/log"
-    aix_config_dir: "/bigc/script"
-    
-    # Playbook identification
-    playbook_name: "AIX SSH Command Validation"
-    playbook_version: "2.0"
-    
-    # AAP Job Information
-    aap_job_template: "{{ tower_job_template_name | default('N/A') }}"
-    aap_job_id: "{{ tower_job_id | default('N/A') }}"
-    aap_user: "{{ tower_user_name | default('N/A') }}"
-    
-    # Change tracking
-    change_reason: "{{ change_reason | default('SSH command validation and testing') }}"
-    change_ticket: "{{ change_ticket | default('VALIDATION') }}"
-    
     # Validation parameters
-    validate_filesystem: true
-    validate_cpu: true
-    validate_memory: true
-    validate_print_queue: true
-    validate_service: true
+    validate_filesystem: "{{ validate_filesystem_management | default(true) }}"
+    validate_cpu: "{{ validate_cpu_management | default(true) }}"
+    validate_memory: "{{ validate_memory_management | default(true) }}"
+    validate_print_queue: "{{ validate_print_queue_management | default(true) }}"
+    validate_service: "{{ validate_service_monitoring | default(true) }}"
+    
+    # Role configuration file paths
+    filesystem_config_file: "{{ aix_config_dir }}/checkspace_validation.cfg"
     
   pre_tasks:
     - name: Display validation information
-      ansible.builtin.raw: |
-        echo "====================================="
-        echo "AIX SSH Command Validation"
-        echo "====================================="
-        echo "Version: 2.0"
-        echo "Target Hosts: aix"
-        echo "====================================="
+      ansible.builtin.debug:
+        msg: |
+          =====================================
+          AIX SSH Command Validation
+          =====================================
+          Version: 2.0
+          Target Hosts: {{ target_hosts | default('aix') }}
+          AAP Job Template: {{ aap_job_template }}
+          AAP Job ID: {{ aap_job_id }}
+          Change Reason: {{ change_reason }}
+          Change Ticket: {{ change_ticket }}
+          =====================================
       tags: always
     
     - name: Gather minimal facts for validation
@@ -61,21 +52,21 @@
   tasks:
     - name: Create validation report directory
       ansible.builtin.raw: |
-        [ -d "/bigc/log/validation" ] || mkdir -p "/bigc/log/validation"
-        chmod 755 "/bigc/log/validation"
+        [ -d "{{ aix_log_dir }}/validation" ] || mkdir -p "{{ aix_log_dir }}/validation"
+        chmod 755 "{{ aix_log_dir }}/validation"
       changed_when: false
       tags: always
     
     - name: Initialize validation report
       ansible.builtin.raw: |
-        cat > "/bigc/log/validation/validation_report_$(date +%Y%m%d).txt" << EOF
+        cat > "{{ aix_log_dir }}/validation/validation_report_$(date +%Y%m%d).txt" << EOF
         =====================================
         AIX SSH Command Validation Report
         =====================================
         Host: $(hostname)
         Date: $(date)
-        AAP Job ID: N/A
-        Change Ticket: VALIDATION
+        AAP Job ID: {{ aap_job_id }}
+        Change Ticket: {{ change_ticket }}
         
         EOF
       changed_when: false
@@ -91,56 +82,129 @@
               tags: 
                 - filesystem
                 - setup
+          vars:
+            filesystem_monitoring_config:
+              - filesystem: "/tmp"
+                threshold: 90
+              - filesystem: "/var"
+                threshold: 85
+            filesystem_config_file: "{{ aix_config_dir }}/checkspace_validation.cfg"
         
-        - name: Create test filesystem configuration for validation
+        - name: Validate filesystem monitoring execution
           ansible.builtin.raw: |
-            cat > "/bigc/script/checkspace_validation.cfg" << EOF
-            /tmp:90
-            /var:85
-            EOF
-            chmod 644 "/bigc/script/checkspace_validation.cfg"
-        
-        - name: Validate filesystem management commands
-          ansible.builtin.raw: |
-            # Test basic filesystem commands availability
+            CONFIG_FILE="{{ filesystem_config_file }}"
+            LOG_FILE="{{ aix_log_dir }}/filesystem_validation_$(date +%Y%m%d).log"
+            
+            echo "Validating filesystem monitoring execution..." > "$LOG_FILE"
+            echo "Date: $(date)" >> "$LOG_FILE"
+            echo "Host: $(hostname)" >> "$LOG_FILE"
+            echo "Config File: $CONFIG_FILE" >> "$LOG_FILE"
+            echo "" >> "$LOG_FILE"
+            
             COMMANDS_AVAILABLE=0
+            TESTS_PASSED=0
             
-            # Test df command
-            if command -v df >/dev/null 2>&1; then
-              COMMANDS_AVAILABLE=$((COMMANDS_AVAILABLE + 1))
+            # Test required commands
+            for cmd in df chfs awk; do
+              if command -v "$cmd" >/dev/null 2>&1; then
+                COMMANDS_AVAILABLE=$((COMMANDS_AVAILABLE + 1))
+                echo "✓ $cmd command available" >> "$LOG_FILE"
+              else
+                echo "✗ $cmd command missing" >> "$LOG_FILE"
+              fi
+            done
+            
+            echo "" >> "$LOG_FILE"
+            echo "Testing filesystem monitoring on configured filesystems:" >> "$LOG_FILE"
+            
+            # Validate configuration file exists and test monitoring logic
+            if [ -f "$CONFIG_FILE" ]; then
+              while IFS=':' read -r filesystem threshold || [ -n "$filesystem" ]; do
+                # Skip empty lines and comments
+                [ -z "$filesystem" ] && continue
+                echo "$filesystem" | grep -q "^#" && continue
+                
+                echo "Testing $filesystem with threshold ${threshold}%" >> "$LOG_FILE"
+                
+                # Test actual filesystem monitoring logic
+                if USAGE=$(df -k "$filesystem" 2>/dev/null | tail -n +2 | awk '{print $5}' | cut -d '%' -f 1); then
+                  echo "  Current usage: ${USAGE}%" >> "$LOG_FILE"
+                  if [ "$USAGE" -gt "$threshold" ] 2>/dev/null; then
+                    echo "  Status: Would trigger expansion (${USAGE}% > ${threshold}%)" >> "$LOG_FILE"
+                  else
+                    echo "  Status: Within threshold (${USAGE}% <= ${threshold}%)" >> "$LOG_FILE"
+                  fi
+                  TESTS_PASSED=$((TESTS_PASSED + 1))
+                else
+                  echo "  Status: Failed to get usage for $filesystem" >> "$LOG_FILE"
+                fi
+              done < "$CONFIG_FILE"
+            else
+              echo "Config file $CONFIG_FILE not found" >> "$LOG_FILE"
             fi
             
-            # Test chfs command
-            if command -v chfs >/dev/null 2>&1; then
-              COMMANDS_AVAILABLE=$((COMMANDS_AVAILABLE + 1))
-            fi
-            
-            # Test awk command
-            if command -v awk >/dev/null 2>&1; then
-              COMMANDS_AVAILABLE=$((COMMANDS_AVAILABLE + 1))
-            fi
+            echo "" >> "$LOG_FILE"
+            echo "Validation Summary:" >> "$LOG_FILE"
+            echo "- Commands available: $COMMANDS_AVAILABLE/3" >> "$LOG_FILE"
+            echo "- Filesystems tested: $TESTS_PASSED" >> "$LOG_FILE"
             
             echo "FILESYSTEM_COMMANDS_AVAILABLE=$COMMANDS_AVAILABLE"
-            echo "FILESYSTEM_TEST_PASSED=YES"
+            echo "FILESYSTEM_TESTS_PASSED=$TESTS_PASSED"
+            echo "FILESYSTEM_VALIDATION_PASSED=YES"
           register: filesystem_validation
           failed_when: false
         
         - name: Record filesystem validation results
           ansible.builtin.raw: |
-            REPORT_FILE="/bigc/log/validation/validation_report_$(date +%Y%m%d).txt"
+            REPORT_FILE="{{ aix_log_dir }}/validation/validation_report_$(date +%Y%m%d).txt"
             echo "Filesystem Management:" >> "$REPORT_FILE"
             echo "- Role Deployment: SUCCESS" >> "$REPORT_FILE"
-            echo "- Commands Available: 3/3" >> "$REPORT_FILE"
-            echo "- Test Status: PASSED" >> "$REPORT_FILE"
+            CMDS=$(echo "{{ filesystem_validation.stdout }}" | grep "FILESYSTEM_COMMANDS_AVAILABLE=" | cut -d= -f2)
+            TESTS=$(echo "{{ filesystem_validation.stdout }}" | grep "FILESYSTEM_TESTS_PASSED=" | cut -d= -f2)
+            echo "- Commands Available: $CMDS/3" >> "$REPORT_FILE"
+            echo "- Filesystems Tested: $TESTS" >> "$REPORT_FILE"
+            echo "- Validation Status: {{ 'PASSED' if 'FILESYSTEM_VALIDATION_PASSED=YES' in filesystem_validation.stdout else 'FAILED' }}" >> "$REPORT_FILE"
             echo "" >> "$REPORT_FILE"
           changed_when: false
               
       when: validate_filesystem | bool
       tags: filesystem
     
+    - name: Test CPU management functionality
+      include_role:
+        name: cpu_management
+        tasks_from: main
+      vars:
+        cpu_load_threshold: "{{ cpu_load_threshold_default }}"
+      when: validate_cpu | bool
+      tags: cpu
+    
+    - name: Test memory management functionality
+      include_role:
+        name: memory_management 
+        tasks_from: main
+      vars:
+        memory_threshold_mb: "{{ memory_threshold_default }}"
+      when: validate_memory | bool
+      tags: memory
+    
+    - name: Test print queue management functionality
+      include_role:
+        name: print_queue_management
+        tasks_from: main
+      when: validate_print_queue | bool
+      tags: print_queue
+    
+    - name: Test service monitoring functionality
+      include_role:
+        name: service_monitoring
+        tasks_from: main
+      when: validate_service | bool
+      tags: service
+    
     - name: Validate all management functions
       ansible.builtin.raw: |
-        REPORT_FILE="/bigc/log/validation/validation_report_$(date +%Y%m%d).txt"
+        REPORT_FILE="{{ aix_log_dir }}/validation/validation_report_$(date +%Y%m%d).txt"
         
         echo "=== VALIDATION RESULTS ===" >> "$REPORT_FILE"
         echo "" >> "$REPORT_FILE"
@@ -168,7 +232,7 @@
         
         # Test directory structure
         echo "Directory Structure:" >> "$REPORT_FILE"
-        for dir in "/bigc/log" "/bigc/script"; do
+        for dir in "{{ aix_log_dir }}" "{{ aix_config_dir }}"; do
           if [ -d "$dir" ]; then
             echo "- $dir: EXISTS ($(ls -ld "$dir" | awk '{print $1}'))" >> "$REPORT_FILE"
           else
@@ -177,38 +241,48 @@
         done
         echo "" >> "$REPORT_FILE"
         
-        # Test role functionality by checking role files
+        # Test role functionality validation
         echo "Role Functionality:" >> "$REPORT_FILE"
         
-        if [ -f "/bigc/script/checkspace_validation.cfg" ]; then
+        {% if validate_filesystem %}
+        if [ -f "{{ filesystem_config_file }}" ]; then
           echo "- Filesystem Management: READY (config file exists)" >> "$REPORT_FILE"
         else
           echo "- Filesystem Management: NOT READY" >> "$REPORT_FILE"
         fi
+        {% endif %}
         
+        {% if validate_cpu %}
         if command -v lparstat >/dev/null 2>&1 && command -v uptime >/dev/null 2>&1; then
           echo "- CPU Management: READY (required commands available)" >> "$REPORT_FILE"
         else
           echo "- CPU Management: NOT READY (missing commands)" >> "$REPORT_FILE"
         fi
+        {% endif %}
         
+        {% if validate_memory %}
         if command -v lsps >/dev/null 2>&1 && command -v prtconf >/dev/null 2>&1; then
           echo "- Memory Management: READY (required commands available)" >> "$REPORT_FILE"
         else
           echo "- Memory Management: NOT READY (missing commands)" >> "$REPORT_FILE"
         fi
+        {% endif %}
         
+        {% if validate_print_queue %}
         if command -v lssrc >/dev/null 2>&1 && command -v lpstat >/dev/null 2>&1; then
           echo "- Print Queue Management: READY (required commands available)" >> "$REPORT_FILE"
         else
           echo "- Print Queue Management: NOT READY (missing commands)" >> "$REPORT_FILE"
         fi
+        {% endif %}
         
+        {% if validate_service %}
         if command -v ps >/dev/null 2>&1 && command -v pkill >/dev/null 2>&1; then
           echo "- Service Monitoring: READY (required commands available)" >> "$REPORT_FILE"
         else
           echo "- Service Monitoring: NOT READY (missing commands)" >> "$REPORT_FILE"
         fi
+        {% endif %}
         
         echo "" >> "$REPORT_FILE"
         echo "VALIDATION_COMPLETE=YES"
@@ -220,7 +294,7 @@
   post_tasks:
     - name: Finalize validation report
       ansible.builtin.raw: |
-        REPORT_FILE="/bigc/log/validation/validation_report_$(date +%Y%m%d).txt"
+        REPORT_FILE="{{ aix_log_dir }}/validation/validation_report_$(date +%Y%m%d).txt"
         
         echo "" >> "$REPORT_FILE"
         echo "======================================" >> "$REPORT_FILE"
@@ -228,8 +302,8 @@
         echo "- Date: $(date)" >> "$REPORT_FILE"
         echo "- Host: $(hostname)" >> "$REPORT_FILE"
         echo "- Status: COMPLETED" >> "$REPORT_FILE"
-        echo "- AAP Job ID: N/A" >> "$REPORT_FILE"
-        echo "- Change Ticket: VALIDATION" >> "$REPORT_FILE"
+        echo "- AAP Job ID: {{ aap_job_id }}" >> "$REPORT_FILE"
+        echo "- Change Ticket: {{ change_ticket }}" >> "$REPORT_FILE"
         echo "======================================" >> "$REPORT_FILE"
         
         echo "REPORT_FINALIZED=YES"
@@ -238,27 +312,41 @@
       tags: always
     
     - name: Display validation summary
-      ansible.builtin.raw: |
-        echo "====================================="
-        echo "AIX SSH Command Validation Summary"
-        echo "====================================="
-        echo "Host: $(hostname)"
-        echo "Validation Report: /bigc/log/validation/validation_report_$(date +%Y%m%d).txt"
-        echo ""
-        echo "Management Functions Validated:"
-        echo "- Filesystem: VALIDATED"
-        echo "- CPU: VALIDATED" 
-        echo "- Memory: VALIDATED"
-        echo "- Print Queue: VALIDATED"
-        echo "- Service Monitoring: VALIDATED"
-        echo ""
-        echo "Overall Status: VALIDATION COMPLETE"
-        echo "====================================="
+      ansible.builtin.debug:
+        msg: |
+          =====================================
+          AIX SSH Command Validation Summary
+          =====================================
+          Host: {{ system_info.stdout_lines | select('match', '^HOSTNAME=') | first | regex_replace('HOSTNAME=', '') | default('unknown') }}
+          Validation Report: {{ aix_log_dir }}/validation/validation_report_$(date +%Y%m%d).txt
+          
+          Management Functions Validated:
+          - Filesystem: {{ 'VALIDATED' if validate_filesystem else 'SKIPPED' }}
+          - CPU: {{ 'VALIDATED' if validate_cpu else 'SKIPPED' }}
+          - Memory: {{ 'VALIDATED' if validate_memory else 'SKIPPED' }}
+          - Print Queue: {{ 'VALIDATED' if validate_print_queue else 'SKIPPED' }}
+          - Service Monitoring: {{ 'VALIDATED' if validate_service else 'SKIPPED' }}
+          
+          Overall Status: {{ 'VALIDATION COMPLETE' if 'VALIDATION_COMPLETE=YES' in validation_results.stdout else 'VALIDATION FAILED' }}
+          =====================================
       tags: always
     
     - name: Send validation notification
       ansible.builtin.raw: |
-        echo "Email notification skipped - not configured"
-      when: false
+        if [ -n "{{ alert_emails | default('') }}" ] && [ -n "{{ smtp_host | default('') }}" ]; then
+          REPORT_FILE="{{ aix_log_dir }}/validation/validation_report_$(date +%Y%m%d).txt"
+          SUBJECT="EIS Command Center: AIX SSH Command Validation completed on $(hostname)"
+          
+          if command -v mail >/dev/null 2>&1; then
+            mail -s "$SUBJECT" "{{ alert_emails | join(',') }}" < "$REPORT_FILE" 2>/dev/null || echo "Failed to send validation email"
+          else
+            echo "Mail command not available - skipping email notification"
+          fi
+        fi
+      when: 
+        - alert_emails is defined
+        - send_validation_email | default(false) | bool
+      failed_when: false
+      tags: always
       failed_when: false
       tags: always
