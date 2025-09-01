@@ -9,6 +9,10 @@
   become: true
   
   vars:
+    # Directory paths
+    aix_log_dir: "/bigc/log"
+    aix_config_dir: "/bigc/script"
+    
     # Playbook identification
     playbook_name: "AIX SSH Command Validation"
     playbook_version: "2.0"
@@ -23,11 +27,11 @@
     change_ticket: "{{ change_ticket | default('VALIDATION') }}"
     
     # Validation parameters
-    validate_filesystem: "{{ validate_filesystem_management | default(true) }}"
-    validate_cpu: "{{ validate_cpu_management | default(true) }}"
-    validate_memory: "{{ validate_memory_management | default(true) }}"
-    validate_print_queue: "{{ validate_print_queue_management | default(true) }}"
-    validate_service: "{{ validate_service_monitoring | default(true) }}"
+    validate_filesystem: true
+    validate_cpu: true
+    validate_memory: true
+    validate_print_queue: true
+    validate_service: true
     
   pre_tasks:
     - name: Display validation information
