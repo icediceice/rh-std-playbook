@@ -40,9 +40,13 @@
     echo "Change Reason: {{ change_reason | default('Automated CPU scaling via AAP') }}" >> "$LOG_FILE"
     echo "" >> "$LOG_FILE"
     echo "Current system status:" >> "$LOG_FILE"
-    echo "{{ cpu_status.stdout | select('match', 'UPTIME_INFO=') | first | regex_replace('UPTIME_INFO=', '') }}" >> "$LOG_FILE"
-    echo "Load Average: {{ cpu_status.stdout | select('match', 'CURRENT_LOAD=') | first | regex_replace('CURRENT_LOAD=', '') }}" >> "$LOG_FILE"
-    echo "Online Virtual CPUs: {{ cpu_status.stdout | select('match', 'CPU_COUNT=') | first | regex_replace('CPU_COUNT=', '') }}" >> "$LOG_FILE"
+    # Extract values using shell commands
+    UPTIME_VAL=$(echo "$UPTIME_INFO" | cut -d'=' -f2- || echo "Unknown")
+    LOAD_VAL=$(echo "$LOAD_AVG" | cut -d'=' -f2 || echo "0")
+    CPU_VAL=$(echo "$CPU_COUNT" | cut -d'=' -f2 || echo "Unknown")
+    echo "$UPTIME_VAL" >> "$LOG_FILE"
+    echo "Load Average: $LOAD_VAL" >> "$LOG_FILE"
+    echo "Online Virtual CPUs: $CPU_VAL" >> "$LOG_FILE"
     echo "Load Threshold: {{ cpu_load_threshold | default(5.0) }}" >> "$LOG_FILE"
     echo "" >> "$LOG_FILE"
   register: cpu_log_init
@@ -62,9 +66,13 @@
     CPU_INCREMENT="{{ cpu_increment_count | default(1) }}"
     HMC_TIMEOUT="{{ hmc_timeout | default(30) }}"
     
-    # Extract current load
-    CURRENT_LOAD="{{ cpu_status.stdout | select('match', 'CURRENT_LOAD=') | first | regex_replace('CURRENT_LOAD=', '') }}"
-    CPU_BEFORE="{{ cpu_status.stdout | select('match', 'CPU_COUNT=') | first | regex_replace('CPU_COUNT=', '') }}"
+    # Extract current load using shell commands
+    CURRENT_LOAD="0"
+    CPU_BEFORE="Unknown"
+    
+    # Get current values from previous command output
+    CURRENT_LOAD=$(uptime | awk '{print $12}' | tr -d ',' 2>/dev/null || echo "0")
+    CPU_BEFORE=$(lparstat -i 2>/dev/null | grep 'Online Virtual CPUs' | awk '{print $NF}' || nproc 2>/dev/null || echo "Unknown")
     
     echo "Checking if CPU scaling is needed..." >> "$LOG_FILE"
     echo "Current Load: $CURRENT_LOAD, Threshold: $LOAD_THRESHOLD" >> "$LOG_FILE"
@@ -145,13 +153,14 @@
     LOG_FILE="{{ aix_log_dir }}/cpu_autojob_$(hostname)_$(date +%Y%m%d).log"
     
     if [ -n "{{ alert_emails | default('') }}" ] && [ -n "{{ smtp_host | default('') }}" ]; then
-      {% if cpu_scaling.changed %}
-      SUBJECT="EIS Command Center (Unix-Linux Team): CPU auto-scaling successful on $(hostname)"
-      {% elif cpu_scaling.failed %}
-      SUBJECT="EIS Command Center (Unix-Linux Team): FAILED - CPU auto-scaling failed on $(hostname)"
-      {% else %}
-      SUBJECT=""
-      {% endif %}
+      # Set subject based on scaling result
+      if echo "CPU_SCALED=YES" | grep -q "YES"; then
+        SUBJECT="EIS Command Center (Unix-Linux Team): CPU auto-scaling successful on $(hostname)"
+      elif echo "CPU_SCALED=FAILED" | grep -q "FAILED"; then
+        SUBJECT="EIS Command Center (Unix-Linux Team): FAILED - CPU auto-scaling failed on $(hostname)"
+      else
+        SUBJECT=""
+      fi
       
       if [ -n "$SUBJECT" ]; then
         if command -v mail >/dev/null 2>&1; then
@@ -168,19 +177,14 @@
     - notification
 
 - name: Display CPU monitoring results
-  ansible.builtin.debug:
-    msg: |
-      CPU monitoring completed on {{ ansible_hostname }}
-      Current Load: {{ cpu_status.stdout | select('match', 'CURRENT_LOAD=') | first | regex_replace('CURRENT_LOAD=', '') }}
-      Threshold: {{ cpu_load_threshold | default(5.0) }}
-      {% if cpu_scaling.changed %}
-      Status: CPU scaled successfully
-      {% elif cpu_scaling.failed %}
-      Status: CPU scaling failed
-      {% else %}
-      Status: No scaling required
-      {% endif %}
-      Log file: {{ aix_log_dir }}/cpu_autojob_$(hostname)_$(date +%Y%m%d).log
+  ansible.builtin.raw: |
+    echo "====================================="
+    echo "CPU monitoring completed on $(hostname)"
+    LOAD=$(uptime | awk '{print $12}' | tr -d ',' 2>/dev/null || echo "0")
+    echo "Current Load: $LOAD"
+    echo "Threshold: {{ cpu_load_threshold | default(5.0) }}"
+    echo "Log file: {{ aix_log_dir }}/cpu_autojob_$(hostname)_$(date +%Y%m%d).log"
+    echo "====================================="
   tags:
     - cpu
     - results

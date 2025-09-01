@@ -21,7 +21,7 @@
 
 - name: Check for high load indicators
   ansible.builtin.raw: |
-    HIGH_LOAD_INDICATOR="{{ monitored_services.zabbix_agent.high_load_indicator | default('zabbix_agentd') }}"
+    HIGH_LOAD_INDICATOR="zabbix_agentd"
     
     # Check for high load indicators related to monitored services
     if ps aux | head | grep -q "$HIGH_LOAD_INDICATOR"; then
@@ -46,8 +46,13 @@
     echo "Change Ticket: {{ change_ticket | default('AUTO') }}" >> "$LOG_FILE"
     echo "Change Reason: {{ change_reason | default('Automated service monitoring via AAP') }}" >> "$LOG_FILE"
     echo "" >> "$LOG_FILE"
-    echo "High load check for {{ monitored_services.zabbix_agent.high_load_indicator | default('zabbix_agentd') }}:" >> "$LOG_FILE"
-    echo "{{ high_load_check.stdout }}" >> "$LOG_FILE"
+    echo "High load check for zabbix_agentd:" >> "$LOG_FILE"
+    # Check current load status
+    if ps aux | head | grep -q "zabbix_agentd"; then
+      echo "HIGH_LOAD_DETECTED=YES" >> "$LOG_FILE"
+    else
+      echo "HIGH_LOAD_DETECTED=NO" >> "$LOG_FILE"
+    fi
     echo "" >> "$LOG_FILE"
   register: service_log_init
   changed_when: false
@@ -59,11 +64,12 @@
   ansible.builtin.raw: |
     LOG_FILE="{{ aix_log_dir }}/service_monitoring_$(hostname)_$(date +%Y%m%d).log"
     RESTART_SCRIPT="{{ aix_script_dir }}/zabbix_restart.sh"
-    SERVICE_NAME="{{ monitored_services.zabbix_agent.process_name | default('zabbix_agentd') }}"
-    RESTART_WAIT="{{ restart_wait_time | default(10) }}"
+    SERVICE_NAME="zabbix_agentd"
+    RESTART_WAIT="10"
     SERVICE_RESTARTED=NO
     
-    if echo "{{ high_load_check.stdout }}" | grep -q "HIGH_LOAD_DETECTED=YES"; then
+    # Check if high load was detected
+    if ps aux | head | grep -q "zabbix_agentd"; then
       echo "High load detected - restarting Zabbix agent" >> "$LOG_FILE"
       echo "" >> "$LOG_FILE"
       echo "Process status before restart:" >> "$LOG_FILE"
@@ -149,8 +155,8 @@ EOF
         echo "=============================== ZABBIX AGENT RESTART FAILED ===============================" > "$ERROR_LOG"
         echo "Date: $(date)" >> "$ERROR_LOG"
         echo "Hostname: $(hostname)" >> "$ERROR_LOG"
-        echo "Change Ticket: {{ change_ticket | default('AUTO') }}" >> "$ERROR_LOG"
-        echo "Change Reason: {{ change_reason | default('Automated service monitoring via AAP') }}" >> "$ERROR_LOG"
+        echo "Change Ticket: AUTO" >> "$ERROR_LOG"
+        echo "Change Reason: Automated service monitoring via AAP" >> "$ERROR_LOG"
         echo "" >> "$ERROR_LOG"
         echo "Error: Zabbix agent restart failed" >> "$ERROR_LOG"
         echo "Service: $SERVICE_NAME" >> "$ERROR_LOG"
@@ -182,16 +188,17 @@ EOF
     if [ -n "{{ alert_emails | default('') }}" ] && [ -n "{{ smtp_host | default('') }}" ]; then
       HOSTNAME=$(hostname)
       
-      {% if service_restart.changed %}
-      LOG_FILE="{{ aix_log_dir }}/service_monitoring_${HOSTNAME}_$(date +%Y%m%d).log"
-      SUBJECT="EIS Command Center (Unix-Linux Team): Zabbix agent restarted successfully on $HOSTNAME"
-      {% elif service_restart.failed %}
-      LOG_FILE="{{ aix_log_dir }}/service_error_${HOSTNAME}_$(date +%Y%m%d)"
-      SUBJECT="EIS Command Center (Unix-Linux Team): FAILED - Zabbix agent restart failed on $HOSTNAME"
-      {% else %}
-      LOG_FILE=""
-      SUBJECT=""
-      {% endif %}
+      # Set notification details based on service status
+      if [ -f "{{ aix_log_dir }}/service_monitoring_${HOSTNAME}_$(date +%Y%m%d).log" ]; then
+        LOG_FILE="{{ aix_log_dir }}/service_monitoring_${HOSTNAME}_$(date +%Y%m%d).log"
+        SUBJECT="EIS Command Center (Unix-Linux Team): Service monitoring completed on $HOSTNAME"
+      elif [ -f "{{ aix_log_dir }}/service_error_${HOSTNAME}_$(date +%Y%m%d)" ]; then
+        LOG_FILE="{{ aix_log_dir }}/service_error_${HOSTNAME}_$(date +%Y%m%d)"
+        SUBJECT="EIS Command Center (Unix-Linux Team): Service monitoring failed on $HOSTNAME"
+      else
+        LOG_FILE=""
+        SUBJECT=""
+      fi
       
       if [ -n "$SUBJECT" ] && [ -f "$LOG_FILE" ]; then
         if command -v mail >/dev/null 2>&1; then
@@ -208,18 +215,16 @@ EOF
     - notification
 
 - name: Display service monitoring results
-  ansible.builtin.debug:
-    msg: |
-      Service monitoring completed on {{ ansible_hostname }}
-      High load detected: {{ 'YES' if 'HIGH_LOAD_DETECTED=YES' in high_load_check.stdout else 'NO' }}
-      {% if service_restart.changed %}
-      Status: Zabbix agent restarted successfully
-      {% elif service_restart.failed %}
-      Status: Zabbix agent restart failed
-      {% else %}
-      Status: No service restart needed
-      {% endif %}
-      Log file: {{ aix_log_dir }}/service_monitoring_$(hostname)_$(date +%Y%m%d).log
+  ansible.builtin.raw: |
+    echo "====================================="
+    echo "Service monitoring completed on $(hostname)"
+    if ps aux | head | grep -q "zabbix_agentd"; then
+      echo "High load detected: YES"
+    else
+      echo "High load detected: NO"
+    fi
+    echo "Log file: {{ aix_log_dir }}/service_monitoring_$(hostname)_$(date +%Y%m%d).log"
+    echo "====================================="
   tags:
     - service_monitoring
     - results

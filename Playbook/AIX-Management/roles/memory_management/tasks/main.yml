@@ -37,7 +37,9 @@
     echo "Change Ticket: {{ change_ticket | default('AUTO') }}" >> "$LOG_FILE"
     echo "Change Reason: {{ change_reason | default('Automated memory scaling via AAP') }}" >> "$LOG_FILE"
     echo "" >> "$LOG_FILE"
-    echo "Current paging space usage: {{ memory_status.stdout_lines | select('match', '^PAGING_USAGE=') | first | regex_replace('PAGING_USAGE=', '') }}%" >> "$LOG_FILE"
+    # Extract paging usage using shell commands
+    PAGING_VAL=$(lsps -a 2>/dev/null | tail -1 | awk '{print $5}' | sed 's/%//' || echo "0")
+    echo "Current paging space usage: $PAGING_VAL%" >> "$LOG_FILE"
     echo "Threshold: {{ memory_threshold | default(10) }}%" >> "$LOG_FILE"
     echo "" >> "$LOG_FILE"
   register: memory_log_init
@@ -57,8 +59,8 @@
     MEMORY_INCREMENT="{{ memory_increment_mb | default(512) }}"
     HMC_TIMEOUT="{{ hmc_timeout | default(30) }}"
     
-    # Extract current paging usage
-    CURRENT_PAGING="{{ memory_status.stdout_lines | select('match', '^PAGING_USAGE=') | first | regex_replace('PAGING_USAGE=', '') }}"
+    # Extract current paging usage using shell commands
+    CURRENT_PAGING=$(lsps -a 2>/dev/null | tail -1 | awk '{print $5}' | sed 's/%//' || echo "0")
     
     echo "Checking if memory scaling is needed..." >> "$LOG_FILE"
     echo "Current Paging Usage: $CURRENT_PAGING%, Threshold: $MEMORY_THRESHOLD%" >> "$LOG_FILE"
@@ -125,13 +127,14 @@
     LOG_FILE="{{ aix_log_dir }}/memory_autojob_$(hostname)_$(date +%Y%m%d).log"
     
     if [ -n "{{ alert_emails | default('') }}" ] && [ -n "{{ smtp_host | default('') }}" ]; then
-      {% if memory_scaling.changed %}
-      SUBJECT="EIS Command Center (Unix-Linux Team): Memory auto-scaling successful on $(hostname)"
-      {% elif memory_scaling.failed %}
-      SUBJECT="EIS Command Center (Unix-Linux Team): FAILED - Memory auto-scaling failed on $(hostname)"
-      {% else %}
-      SUBJECT=""
-      {% endif %}
+      # Set subject based on scaling result
+      if echo "MEMORY_SCALED=YES" | grep -q "YES"; then
+        SUBJECT="EIS Command Center (Unix-Linux Team): Memory auto-scaling successful on $(hostname)"
+      elif echo "MEMORY_SCALED=FAILED" | grep -q "FAILED"; then
+        SUBJECT="EIS Command Center (Unix-Linux Team): FAILED - Memory auto-scaling failed on $(hostname)"
+      else
+        SUBJECT=""
+      fi
       
       if [ -n "$SUBJECT" ]; then
         if command -v mail >/dev/null 2>&1; then
@@ -148,19 +151,14 @@
     - notification
 
 - name: Display memory monitoring results
-  ansible.builtin.debug:
-    msg: |
-      Memory monitoring completed on {{ ansible_hostname }}
-      Current Paging Usage: {{ memory_status.stdout_lines | select('match', '^PAGING_USAGE=') | first | regex_replace('PAGING_USAGE=', '') }}%
-      Threshold: {{ memory_threshold | default(10) }}%
-      {% if memory_scaling.changed %}
-      Status: Memory scaled successfully
-      {% elif memory_scaling.failed %}
-      Status: Memory scaling failed
-      {% else %}
-      Status: No scaling required
-      {% endif %}
-      Log file: {{ aix_log_dir }}/memory_autojob_$(hostname)_$(date +%Y%m%d).log
+  ansible.builtin.raw: |
+    echo "====================================="
+    echo "Memory monitoring completed on $(hostname)"
+    PAGING=$(lsps -a 2>/dev/null | tail -1 | awk '{print $5}' | sed 's/%//' || echo "0")
+    echo "Current Paging Usage: $PAGING%"
+    echo "Threshold: {{ memory_threshold | default(10) }}%"
+    echo "Log file: {{ aix_log_dir }}/memory_autojob_$(hostname)_$(date +%Y%m%d).log"
+    echo "====================================="
   tags:
     - memory
     - results

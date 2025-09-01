@@ -20,11 +20,22 @@
     - setup
 
 - name: Create filesystem monitoring configuration
-  ansible.builtin.template:
-    src: checkspace.cfg.j2
-    dest: "{{ filesystem_config_file }}"
-    mode: '0644'
-    backup: true
+  ansible.builtin.raw: |
+    CONFIG_FILE="{{ filesystem_config_file }}"
+    
+    # Create backup if file exists
+    [ -f "$CONFIG_FILE" ] && cp "$CONFIG_FILE" "$CONFIG_FILE.backup.$(date +%Y%m%d_%H%M%S)"
+    
+    # Create configuration file with filesystem monitoring entries
+    # Format: filesystem,threshold (one per line)
+    cat > "$CONFIG_FILE" << 'EOF'
+    /tmp,90
+    /var,85
+    EOF
+    
+    chmod 644 "$CONFIG_FILE"
+    echo "Created filesystem monitoring configuration at $CONFIG_FILE"
+  changed_when: true
   tags:
     - filesystem
     - config

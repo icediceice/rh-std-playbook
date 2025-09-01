@@ -133,7 +133,7 @@
             
             # Validate configuration file exists and test monitoring logic
             if [ -f "$CONFIG_FILE" ]; then
-              while IFS=':' read -r filesystem threshold || [ -n "$filesystem" ]; do
+              while IFS=',' read -r filesystem threshold || [ -n "$filesystem" ]; do
                 # Skip empty lines and comments
                 [ -z "$filesystem" ] && continue
                 echo "$filesystem" | grep -q "^#" && continue
