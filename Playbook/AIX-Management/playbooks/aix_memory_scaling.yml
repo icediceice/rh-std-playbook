@@ -46,7 +46,7 @@
     
   pre_tasks:
     - name: Gather minimal system facts
-      ansible.builtin.raw: |\
+      ansible.builtin.raw: |
         echo "HOSTNAME=$(hostname)"
         echo "OS=$(uname -s)"
         echo "DATE=$(date)"
@@ -100,7 +100,7 @@
       tags: always
     
     - name: Ensure log directory exists
-      ansible.builtin.raw: |\
+      ansible.builtin.raw: |
         [ -d "{{ aix_log_dir }}" ] || mkdir -p "{{ aix_log_dir }}"
         chmod 755 "{{ aix_log_dir }}"
       changed_when: false
@@ -108,7 +108,7 @@
 
   tasks:
     - name: Pre-scaling validation and memory scaling execution
-      ansible.builtin.raw: |\
+      ansible.builtin.raw: |
         HOSTNAME=$(hostname)
         LOG_FILE="{{ aix_log_dir }}/memory_scaling_${HOSTNAME}_$(date +%Y%m%d_%H%M%S).log"
         

@@ -50,7 +50,7 @@
     
   pre_tasks:
     - name: Gather minimal system facts
-      ansible.builtin.raw: |\
+      ansible.builtin.raw: |
         echo "HOSTNAME=$(hostname)"
         echo "OS=$(uname -s)"
         echo "DATE=$(date)"
@@ -89,7 +89,7 @@
 
   tasks:
     - name: Check filesystem usage against thresholds
-      ansible.builtin.raw: |\
+      ansible.builtin.raw: |
         HOSTNAME=$(hostname)
         LOG_FILE="{{ aix_log_dir }}/filesystem_threshold_check_${HOSTNAME}_$(date +%Y%m%d_%H%M%S).log"
         RESULTS_FILE="{{ aix_log_dir }}/filesystem_threshold_results_${HOSTNAME}_$(date +%Y%m%d_%H%M%S).txt"
@@ -263,7 +263,7 @@
       tags: always
     
     - name: Send threshold alert notification
-      ansible.builtin.raw: |\
+      ansible.builtin.raw: |
         if [ -n "{{ alert_emails | default('') }}" ] && [ -n "{{ smtp_host | default('') }}" ] && [ "{{ expansion_needed | default('NO') }}" = "YES" ]; then
           SUBJECT="🚨 AIX Filesystem Threshold Alert - {{ system_info.stdout_lines | select('match', '^HOSTNAME=') | first | regex_replace('HOSTNAME=', '') | default('unknown') }}"
           

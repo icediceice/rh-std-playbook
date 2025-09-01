@@ -36,7 +36,7 @@
     
   pre_tasks:
     - name: Gather minimal system facts
-      ansible.builtin.raw: |\
+      ansible.builtin.raw: |
         echo "HOSTNAME=$(hostname)"
         echo "OS=$(uname -s)"
         echo "DATE=$(date)"
@@ -78,7 +78,7 @@
       tags: always
     
     - name: Ensure required directories exist
-      ansible.builtin.raw: |\
+      ansible.builtin.raw: |
         for dir in "{{ aix_log_dir }}" "{{ aix_backup_dir }}"; do
           [ -d "$dir" ] || mkdir -p "$dir"
           chmod 755 "$dir"
@@ -88,7 +88,7 @@
 
   tasks:
     - name: Pre-expansion validation and backup
-      ansible.builtin.raw: |\
+      ansible.builtin.raw: |
         HOSTNAME=$(hostname)
         LOG_FILE="{{ aix_log_dir }}/filesystem_expansion_${HOSTNAME}_$(date +%Y%m%d_%H%M%S).log"
         BACKUP_LOG="{{ aix_backup_dir }}/filesystem_backup_${HOSTNAME}_$(date +%Y%m%d_%H%M%S).log"
@@ -351,7 +351,7 @@ EOF
       tags: always
     
     - name: Send expansion completion notification
-      ansible.builtin.raw: |\
+      ansible.builtin.raw: |
         if [ -n "{{ alert_emails | default('') }}" ] && [ -n "{{ smtp_host | default('') }}" ]; then
           if [ "{{ expansion_success | default('NO') }}" = "YES" ]; then
             SUBJECT="✅ AIX Filesystem Expansion Completed - {{ system_info.stdout_lines | select('match', '^HOSTNAME=') | first | regex_replace('HOSTNAME=', '') | default('unknown') }}"

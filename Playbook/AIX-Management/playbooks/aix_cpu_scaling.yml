@@ -46,7 +46,7 @@
     
   pre_tasks:
     - name: Gather minimal system facts
-      ansible.builtin.raw: |\
+      ansible.builtin.raw: |
         echo "HOSTNAME=$(hostname)"
         echo "OS=$(uname -s)"
         echo "DATE=$(date)"
@@ -100,7 +100,7 @@
       tags: always
     
     - name: Ensure log directory exists
-      ansible.builtin.raw: |\
+      ansible.builtin.raw: |
         [ -d "{{ aix_log_dir }}" ] || mkdir -p "{{ aix_log_dir }}"
         chmod 755 "{{ aix_log_dir }}"
       changed_when: false
@@ -108,7 +108,7 @@
 
   tasks:
     - name: Pre-scaling validation and CPU scaling execution
-      ansible.builtin.raw: |\
+      ansible.builtin.raw: |
         HOSTNAME=$(hostname)
         LOG_FILE="{{ aix_log_dir }}/cpu_scaling_${HOSTNAME}_$(date +%Y%m%d_%H%M%S).log"
         
@@ -352,7 +352,7 @@
       tags: always
     
     - name: Send CPU scaling completion notification
-      ansible.builtin.raw: |\
+      ansible.builtin.raw: |
         if [ -n "{{ alert_emails | default('') }}" ] && [ -n "{{ smtp_host | default('') }}" ]; then
           if [ "{{ cpu_scaling_success | default('NO') }}" = "YES" ]; then
             SUBJECT="✅ AIX CPU Scaling Completed - {{ system_info.stdout_lines | select('match', '^HOSTNAME=') | first | regex_replace('HOSTNAME=', '') | default('unknown') }}"
