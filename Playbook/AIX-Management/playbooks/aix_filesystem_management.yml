@@ -5,7 +5,7 @@
 
 - name: AIX Filesystem Management and Auto-expansion
   hosts: "{{ target_hosts | default('aix') }}"
-  gather_facts: true
+  gather_facts: false
   become: true
   
   vars:
@@ -19,17 +19,22 @@
     aap_user: "{{ tower_user_name | default('N/A') }}"
     aap_inventory: "{{ tower_inventory_name | default('N/A') }}"
     
-    # Change tracking for AAP
-    change_reason: "{{ change_reason | default('Automated filesystem monitoring and expansion') }}"
-    change_ticket: "{{ change_ticket | default('') }}"
-    
-    # Credential status for display
-    credential_status: "{{ 'AAP Injected' if ansible_user is defined and ansible_user != '' else 'Manual Configuration' }}"
+    # Change tracking for AAP (avoid recursive definition)
+    fs_change_reason: "{{ change_reason | default('Automated filesystem monitoring and expansion') }}"
+    fs_change_ticket: "{{ change_ticket | default('') }}"
     
     # Override thresholds if provided via survey
-    filesystem_threshold_override: "{{ filesystem_threshold | default(omit) }}"
+    filesystem_threshold_override: "{{ filesystem_threshold | default(85) }}"
     
   pre_tasks:
+    - name: Gather minimal system facts
+      ansible.builtin.raw: |
+        echo "HOSTNAME=$(hostname)"
+        echo "OS=$(uname -s)"
+      register: system_info
+      changed_when: false
+      tags: always
+    
     - name: Display playbook information
       ansible.builtin.debug:
         msg: |
@@ -41,21 +46,21 @@
           AAP Job Template: {{ aap_job_template }}
           AAP Job ID: {{ aap_job_id }}
           AAP User: {{ aap_user }}
-          Change Reason: {{ change_reason }}
-          Change Ticket: {{ change_ticket }}
+          Change Reason: {{ fs_change_reason }}
+          Change Ticket: {{ fs_change_ticket }}
           =====================================
       tags: always
     
     - name: Validate target hosts
       ansible.builtin.fail:
         msg: "No valid AIX hosts found in inventory"
-      when: ansible_system is not defined or ansible_system != "AIX"
+      when: "'OS=AIX' not in system_info.stdout"
       tags: always
     
     - name: Set filesystem threshold if provided
       ansible.builtin.set_fact:
         filesystem_default_threshold: "{{ filesystem_threshold_override }}"
-      when: filesystem_threshold_override is defined
+      when: filesystem_threshold_override != 85
       tags: always
 
   roles:
@@ -72,9 +77,8 @@
           =====================================
           Filesystem Management Summary
           =====================================
-          Host: {{ ansible_hostname }}
-          Execution Time: {{ ansible_date_time.iso8601 }}
-          Filesystems Monitored: {{ filesystem_monitoring_config | length }}
+          Host: {{ system_info.stdout_lines | select('match', '^HOSTNAME=') | first | regex_replace('HOSTNAME=', '') | default('unknown') }}
+          Execution Time: {{ ansible_date_time.iso8601 if ansible_date_time is defined else 'N/A' }}
           Status: Completed successfully
           =====================================
       tags: always

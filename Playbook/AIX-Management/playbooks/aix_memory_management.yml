@@ -5,7 +5,7 @@
 
 - name: AIX Memory Management and Auto-scaling
   hosts: "{{ target_hosts | default('aix') }}"
-  gather_facts: true
+  gather_facts: false
   become: true
   
   vars:
@@ -19,18 +19,23 @@
     aap_user: "{{ tower_user_name | default('N/A') }}"
     aap_inventory: "{{ tower_inventory_name | default('N/A') }}"
     
-    # Change tracking for AAP
-    change_reason: "{{ change_reason | default('Automated memory monitoring and scaling') }}"
-    change_ticket: "{{ change_ticket | default('') }}"
-    
-    # Credential status for display
-    credential_status: "{{ 'AAP Injected' if ansible_user is defined and ansible_user != '' else 'Manual Configuration' }}"
+    # Change tracking for AAP (avoid recursive definition)
+    memory_change_reason: "{{ change_reason | default('Automated memory monitoring and scaling') }}"
+    memory_change_ticket: "{{ change_ticket | default('') }}"
     
     # Override thresholds if provided via survey
-    memory_threshold_override: "{{ memory_threshold | default(omit) }}"
-    memory_increment_override: "{{ memory_increment | default(omit) }}"
+    memory_threshold_override: "{{ memory_threshold | default(10) }}"
+    memory_increment_override: "{{ memory_increment | default(512) }}"
     
   pre_tasks:
+    - name: Gather minimal system facts
+      ansible.builtin.raw: |
+        echo "HOSTNAME=$(hostname)"
+        echo "OS=$(uname -s)"
+      register: system_info
+      changed_when: false
+      tags: always
+    
     - name: Display playbook information
       ansible.builtin.debug:
         msg: |
@@ -42,8 +47,8 @@
           AAP Job Template: {{ aap_job_template }}
           AAP Job ID: {{ aap_job_id }}
           AAP User: {{ aap_user }}
-          Change Reason: {{ change_reason }}
-          Change Ticket: {{ change_ticket }}
+          Change Reason: {{ memory_change_reason }}
+          Change Ticket: {{ memory_change_ticket }}
           HMC Host: {{ hmc_host }}
           =====================================
       tags: always
@@ -51,7 +56,7 @@
     - name: Validate target hosts
       ansible.builtin.fail:
         msg: "No valid AIX hosts found in inventory"
-      when: ansible_system is not defined or ansible_system != "AIX"
+      when: "'OS=AIX' not in system_info.stdout"
       tags: always
     
     - name: Set memory threshold if provided
@@ -72,7 +77,11 @@
         port: 22
         timeout: 10
       delegate_to: localhost
-      when: memory_auto_scaling_enabled | bool
+      when: 
+        - hmc_host is defined
+        - hmc_host != ''
+        - memory_auto_scaling_enabled | default(false) | bool
+      failed_when: false
       tags: always
 
   roles:
@@ -91,12 +100,12 @@
           =====================================
           Memory Management Summary
           =====================================
-          Host: {{ ansible_hostname }}
-          Execution Time: {{ ansible_date_time.iso8601 }}
-          Paging Threshold: {{ memory_threshold }}%
-          Memory Increment: {{ memory_increment_mb }}MB
-          Auto-scaling Enabled: {{ memory_auto_scaling_enabled }}
-          HMC Integration: {{ hmc_host }}
+          Host: {{ system_info.stdout_lines | select('match', '^HOSTNAME=') | first | regex_replace('HOSTNAME=', '') | default('unknown') }}
+          Execution Time: {{ ansible_date_time.iso8601 if ansible_date_time is defined else 'N/A' }}
+          Paging Threshold: {{ memory_threshold | default(10) }}%
+          Memory Increment: {{ memory_increment_mb | default(512) }}MB
+          Auto-scaling Enabled: {{ memory_auto_scaling_enabled | default(false) }}
+          HMC Integration: {{ hmc_host | default('N/A') }}
           Status: Completed successfully
           =====================================
       tags: always
