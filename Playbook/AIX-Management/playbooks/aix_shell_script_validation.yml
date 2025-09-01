@@ -257,7 +257,7 @@
           =====================================
           AIX SSH Command Validation Summary
           =====================================
-          Host: {{ ansible_hostname }}
+          Host: {{ system_info.stdout_lines | select('match', '^HOSTNAME=') | first | regex_replace('HOSTNAME=', '') | default('unknown') }}
           Validation Report: {{ aix_log_dir }}/validation/validation_report_$(date +%Y%m%d).txt
           
           Management Functions Validated:
