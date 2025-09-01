@@ -9,6 +9,11 @@
   become: true
   
   vars:
+    # Directory paths - essential for all operations
+    aix_log_dir: "/bigc/log"
+    aix_script_dir: "/bigc/script" 
+    aix_config_dir: "/bigc/script"
+    
     # AAP Job Information
     aap_job_template: "{{ tower_job_template_name | default('N/A') }}"
     aap_job_id: "{{ tower_job_id | default('N/A') }}"
