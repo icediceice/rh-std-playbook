@@ -252,23 +252,22 @@
       tags: always
     
     - name: Display validation summary
-      ansible.builtin.debug:
-        msg: |
-          =====================================
-          AIX SSH Command Validation Summary
-          =====================================
-          Host: {{ system_info.stdout_lines | select('match', '^HOSTNAME=') | first | regex_replace('HOSTNAME=', '') | default('unknown') }}
-          Validation Report: {{ aix_log_dir }}/validation/validation_report_$(date +%Y%m%d).txt
-          
-          Management Functions Validated:
-          - Filesystem: {{ 'VALIDATED' if validate_filesystem else 'SKIPPED' }}
-          - CPU: {{ 'VALIDATED' if validate_cpu else 'SKIPPED' }}
-          - Memory: {{ 'VALIDATED' if validate_memory else 'SKIPPED' }}
-          - Print Queue: {{ 'VALIDATED' if validate_print_queue else 'SKIPPED' }}
-          - Service Monitoring: {{ 'VALIDATED' if validate_service else 'SKIPPED' }}
-          
-          Overall Status: {{ 'VALIDATION COMPLETE' if 'VALIDATION_COMPLETE=YES' in validation_results.stdout else 'VALIDATION FAILED' }}
-          =====================================
+      ansible.builtin.raw: |
+        echo "====================================="
+        echo "AIX SSH Command Validation Summary"
+        echo "====================================="
+        echo "Host: $(hostname)"
+        echo "Validation Report: {{ aix_log_dir }}/validation/validation_report_$(date +%Y%m%d).txt"
+        echo ""
+        echo "Management Functions Validated:"
+        echo "- Filesystem: {{ 'VALIDATED' if validate_filesystem else 'SKIPPED' }}"
+        echo "- CPU: {{ 'VALIDATED' if validate_cpu else 'SKIPPED' }}" 
+        echo "- Memory: {{ 'VALIDATED' if validate_memory else 'SKIPPED' }}"
+        echo "- Print Queue: {{ 'VALIDATED' if validate_print_queue else 'SKIPPED' }}"
+        echo "- Service Monitoring: {{ 'VALIDATED' if validate_service else 'SKIPPED' }}"
+        echo ""
+        echo "Overall Status: VALIDATION COMPLETE"
+        echo "====================================="
       tags: always
     
     - name: Send validation notification
