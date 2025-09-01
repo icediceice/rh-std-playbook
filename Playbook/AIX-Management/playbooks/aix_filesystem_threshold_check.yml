@@ -1,0 +1,285 @@
+---
+# AIX Filesystem Threshold Check Playbook
+# Checks filesystem usage against predefined thresholds
+# Sets workflow variables for AAP to trigger expansion if needed
+# Compatible with AAP 2.5 workflow orchestration
+
+- name: AIX Filesystem Threshold Check
+  hosts: "{{ target_hosts | default('aix') }}"
+  gather_facts: false
+  become: true
+  
+  vars:
+    # Playbook identification for AAP
+    playbook_name: "AIX Filesystem Threshold Check"
+    playbook_version: "3.0"
+    
+    # AAP Job Information (automatically injected by AAP)
+    aap_job_template: "{{ tower_job_template_name | default('N/A') }}"
+    aap_job_id: "{{ tower_job_id | default('N/A') }}"
+    aap_user: "{{ tower_user_name | default('N/A') }}"
+    aap_inventory: "{{ tower_inventory_name | default('N/A') }}"
+    
+    # Change tracking for AAP (avoid recursive definition)
+    fs_check_reason: "{{ change_reason | default('Automated filesystem threshold monitoring') }}"
+    fs_check_ticket: "{{ change_ticket | default('') }}"
+    
+    # Filesystem monitoring configuration - can be overridden via survey
+    filesystem_thresholds:
+      - filesystem: "/"
+        threshold: "{{ root_fs_threshold | default(85) }}"
+        expand_by_gb: "{{ root_fs_expand_gb | default(5) }}"
+      - filesystem: "/var"
+        threshold: "{{ var_fs_threshold | default(85) }}"
+        expand_by_gb: "{{ var_fs_expand_gb | default(3) }}"
+      - filesystem: "/tmp"
+        threshold: "{{ tmp_fs_threshold | default(90) }}"
+        expand_by_gb: "{{ tmp_fs_expand_gb | default(2) }}"
+      - filesystem: "/home"
+        threshold: "{{ home_fs_threshold | default(85) }}"
+        expand_by_gb: "{{ home_fs_expand_gb | default(5) }}"
+      - filesystem: "/opt"
+        threshold: "{{ opt_fs_threshold | default(85) }}"
+        expand_by_gb: "{{ opt_fs_expand_gb | default(3) }}"
+    
+    # Custom filesystems from survey input
+    custom_filesystems: "{{ additional_filesystems | default([]) }}"
+    
+    # Directory paths
+    aix_log_dir: "/bigc/log"
+    
+  pre_tasks:
+    - name: Gather minimal system facts
+      ansible.builtin.raw: |\
+        echo "HOSTNAME=$(hostname)"
+        echo "OS=$(uname -s)"
+        echo "DATE=$(date)"
+      register: system_info
+      changed_when: false
+      tags: always
+    
+    - name: Display threshold check information
+      ansible.builtin.debug:
+        msg: |
+          =====================================
+          AIX Filesystem Threshold Check
+          =====================================
+          Version: {{ playbook_version }}
+          Target Hosts: {{ target_hosts | default('aix') }}
+          AAP Job Template: {{ aap_job_template }}
+          AAP Job ID: {{ aap_job_id }}
+          AAP User: {{ aap_user }}
+          Change Reason: {{ fs_check_reason }}
+          Change Ticket: {{ fs_check_ticket }}
+          =====================================
+      tags: always
+    
+    - name: Validate target hosts
+      ansible.builtin.fail:
+        msg: "No valid AIX hosts found in inventory"
+      when: "'OS=AIX' not in system_info.stdout"
+      tags: always
+    
+    - name: Ensure log directory exists
+      ansible.builtin.raw: |\
+        [ -d "{{ aix_log_dir }}" ] || mkdir -p "{{ aix_log_dir }}"
+        chmod 755 "{{ aix_log_dir }}"
+      changed_when: false
+      tags: always
+
+  tasks:
+    - name: Check filesystem usage against thresholds
+      ansible.builtin.raw: |\
+        HOSTNAME=$(hostname)
+        LOG_FILE="{{ aix_log_dir }}/filesystem_threshold_check_${HOSTNAME}_$(date +%Y%m%d_%H%M%S).log"
+        RESULTS_FILE="{{ aix_log_dir }}/filesystem_threshold_results_${HOSTNAME}_$(date +%Y%m%d_%H%M%S).txt"
+        
+        echo "=============================== FILESYSTEM THRESHOLD CHECK ===============================" > "$LOG_FILE"
+        echo "Date: $(date)" >> "$LOG_FILE"
+        echo "Hostname: $HOSTNAME" >> "$LOG_FILE"
+        echo "AAP Job ID: {{ aap_job_id }}" >> "$LOG_FILE"
+        echo "Change Ticket: {{ fs_check_ticket }}" >> "$LOG_FILE"
+        echo "" >> "$LOG_FILE"
+        
+        # Initialize results
+        EXPANSION_NEEDED=NO
+        FILESYSTEMS_TO_EXPAND=""
+        TOTAL_CHECKED=0
+        EXCEEDING_THRESHOLD=0
+        
+        # Check predefined filesystems
+        {% for fs in filesystem_thresholds %}
+        FILESYSTEM="{{ fs.filesystem }}"
+        THRESHOLD={{ fs.threshold }}
+        EXPAND_BY={{ fs.expand_by_gb }}
+        
+        echo "Checking $FILESYSTEM (threshold: ${THRESHOLD}%)..." >> "$LOG_FILE"
+        TOTAL_CHECKED=$((TOTAL_CHECKED + 1))
+        
+        if [ -d "$FILESYSTEM" ]; then
+          # Get filesystem usage percentage
+          USAGE=$(df -k "$FILESYSTEM" 2>/dev/null | tail -1 | awk '{print $5}' | sed 's/%//')
+          
+          if [ "$USAGE" ] && [ "$USAGE" -gt "$THRESHOLD" ] 2>/dev/null; then
+            echo "  ⚠️  THRESHOLD EXCEEDED: $FILESYSTEM usage is ${USAGE}% (threshold: ${THRESHOLD}%)" >> "$LOG_FILE"
+            echo "  📈 Expansion needed: ${EXPAND_BY}GB" >> "$LOG_FILE"
+            EXCEEDING_THRESHOLD=$((EXCEEDING_THRESHOLD + 1))
+            EXPANSION_NEEDED=YES
+            FILESYSTEMS_TO_EXPAND="${FILESYSTEMS_TO_EXPAND}${FILESYSTEM}:${USAGE}:${THRESHOLD}:${EXPAND_BY},"
+          else
+            echo "  ✅ OK: $FILESYSTEM usage is ${USAGE}% (threshold: ${THRESHOLD}%)" >> "$LOG_FILE"
+          fi
+        else
+          echo "  ❌ Filesystem $FILESYSTEM does not exist or is not mounted" >> "$LOG_FILE"
+        fi
+        echo "" >> "$LOG_FILE"
+        {% endfor %}
+        
+        # Check custom filesystems if provided
+        {% for custom_fs in custom_filesystems %}
+        FILESYSTEM="{{ custom_fs.filesystem }}"
+        THRESHOLD={{ custom_fs.threshold | default(85) }}
+        EXPAND_BY={{ custom_fs.expand_by_gb | default(5) }}
+        
+        echo "Checking custom filesystem $FILESYSTEM (threshold: ${THRESHOLD}%)..." >> "$LOG_FILE"
+        TOTAL_CHECKED=$((TOTAL_CHECKED + 1))
+        
+        if [ -d "$FILESYSTEM" ]; then
+          USAGE=$(df -k "$FILESYSTEM" 2>/dev/null | tail -1 | awk '{print $5}' | sed 's/%//')
+          
+          if [ "$USAGE" ] && [ "$USAGE" -gt "$THRESHOLD" ] 2>/dev/null; then
+            echo "  ⚠️  THRESHOLD EXCEEDED: $FILESYSTEM usage is ${USAGE}% (threshold: ${THRESHOLD}%)" >> "$LOG_FILE"
+            echo "  📈 Expansion needed: ${EXPAND_BY}GB" >> "$LOG_FILE"
+            EXCEEDING_THRESHOLD=$((EXCEEDING_THRESHOLD + 1))
+            EXPANSION_NEEDED=YES
+            FILESYSTEMS_TO_EXPAND="${FILESYSTEMS_TO_EXPAND}${FILESYSTEM}:${USAGE}:${THRESHOLD}:${EXPAND_BY},"
+          else
+            echo "  ✅ OK: $FILESYSTEM usage is ${USAGE}% (threshold: ${THRESHOLD}%)" >> "$LOG_FILE"
+          fi
+        else
+          echo "  ❌ Custom filesystem $FILESYSTEM does not exist or is not mounted" >> "$LOG_FILE"
+        fi
+        echo "" >> "$LOG_FILE"
+        {% endfor %}
+        
+        # Generate summary
+        echo "=============================== SUMMARY ===============================" >> "$LOG_FILE"
+        echo "Total filesystems checked: $TOTAL_CHECKED" >> "$LOG_FILE"
+        echo "Filesystems exceeding threshold: $EXCEEDING_THRESHOLD" >> "$LOG_FILE"
+        echo "Expansion needed: $EXPANSION_NEEDED" >> "$LOG_FILE"
+        
+        if [ "$EXPANSION_NEEDED" = "YES" ]; then
+          echo "Filesystems requiring expansion:" >> "$LOG_FILE"
+          echo "$FILESYSTEMS_TO_EXPAND" | tr ',' '\n' | while IFS=':' read fs usage threshold expand_gb; do
+            [ -n "$fs" ] && echo "  - $fs: ${usage}% usage (threshold: ${threshold}%) -> expand by ${expand_gb}GB" >> "$LOG_FILE"
+          done
+        fi
+        echo "" >> "$LOG_FILE"
+        echo "Completed at: $(date)" >> "$LOG_FILE"
+        
+        # Create results file for workflow
+        cat > "$RESULTS_FILE" << EOF
+        EXPANSION_NEEDED=$EXPANSION_NEEDED
+        FILESYSTEMS_TO_EXPAND=$FILESYSTEMS_TO_EXPAND
+        TOTAL_CHECKED=$TOTAL_CHECKED
+        EXCEEDING_THRESHOLD=$EXCEEDING_THRESHOLD
+        HOSTNAME=$HOSTNAME
+        TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+        AAP_JOB_ID={{ aap_job_id }}
+        CHANGE_TICKET={{ fs_check_ticket }}
+        EOF
+        
+        # Output for Ansible
+        echo "EXPANSION_NEEDED=$EXPANSION_NEEDED"
+        echo "FILESYSTEMS_TO_EXPAND=$FILESYSTEMS_TO_EXPAND"
+        echo "TOTAL_CHECKED=$TOTAL_CHECKED"
+        echo "EXCEEDING_THRESHOLD=$EXCEEDING_THRESHOLD"
+        echo "LOG_FILE=$LOG_FILE"
+        echo "RESULTS_FILE=$RESULTS_FILE"
+      register: threshold_check_results
+      changed_when: false
+      tags:
+        - threshold_check
+        - filesystem
+    
+    - name: Parse threshold check results
+      ansible.builtin.set_fact:
+        expansion_needed: "{{ threshold_check_results.stdout_lines | select('match', '^EXPANSION_NEEDED=') | first | regex_replace('EXPANSION_NEEDED=', '') }}"
+        filesystems_to_expand: "{{ threshold_check_results.stdout_lines | select('match', '^FILESYSTEMS_TO_EXPAND=') | first | regex_replace('FILESYSTEMS_TO_EXPAND=', '') }}"
+        total_checked: "{{ threshold_check_results.stdout_lines | select('match', '^TOTAL_CHECKED=') | first | regex_replace('TOTAL_CHECKED=', '') }}"
+        exceeding_threshold: "{{ threshold_check_results.stdout_lines | select('match', '^EXCEEDING_THRESHOLD=') | first | regex_replace('EXCEEDING_THRESHOLD=', '') }}"
+        log_file: "{{ threshold_check_results.stdout_lines | select('match', '^LOG_FILE=') | first | regex_replace('LOG_FILE=', '') }}"
+        results_file: "{{ threshold_check_results.stdout_lines | select('match', '^RESULTS_FILE=') | first | regex_replace('RESULTS_FILE=', '') }}"
+      tags: threshold_check
+    
+    # Set workflow variables for AAP
+    - name: Set AAP workflow variables for filesystem expansion
+      ansible.builtin.set_stats:
+        data:
+          filesystem_expansion_needed: "{{ expansion_needed }}"
+          filesystem_expansion_list: "{{ filesystems_to_expand }}"
+          filesystem_check_completed: "YES"
+          filesystem_total_checked: "{{ total_checked }}"
+          filesystem_exceeding_count: "{{ exceeding_threshold }}"
+          filesystem_log_file: "{{ log_file }}"
+          filesystem_results_file: "{{ results_file }}"
+          filesystem_hostname: "{{ system_info.stdout_lines | select('match', '^HOSTNAME=') | first | regex_replace('HOSTNAME=', '') | default('unknown') }}"
+          filesystem_check_timestamp: "{{ system_info.stdout_lines | select('match', '^DATE=') | first | regex_replace('DATE=', '') | default('N/A') }}"
+        aggregate: false
+      tags: threshold_check
+
+  post_tasks:
+    - name: Display threshold check summary
+      ansible.builtin.debug:
+        msg: |
+          =====================================
+          Filesystem Threshold Check Summary
+          =====================================
+          Host: {{ system_info.stdout_lines | select('match', '^HOSTNAME=') | first | regex_replace('HOSTNAME=', '') | default('unknown') }}
+          Execution Time: {{ system_info.stdout_lines | select('match', '^DATE=') | first | regex_replace('DATE=', '') | default('N/A') }}
+          Total Filesystems Checked: {{ total_checked | default('0') }}
+          Filesystems Exceeding Threshold: {{ exceeding_threshold | default('0') }}
+          Expansion Needed: {{ expansion_needed | default('NO') }}
+          
+          {% if expansion_needed == 'YES' %}
+          🚨 ACTION REQUIRED: Filesystem expansion needed!
+          
+          Filesystems requiring expansion:
+          {% for fs_info in filesystems_to_expand.split(',') if fs_info %}
+          {% set fs_parts = fs_info.split(':') %}
+          {% if fs_parts | length >= 4 %}
+          - {{ fs_parts[0] }}: {{ fs_parts[1] }}% usage (threshold: {{ fs_parts[2] }}%) -> expand by {{ fs_parts[3] }}GB
+          {% endif %}
+          {% endfor %}
+          
+          Next Step: AAP workflow should trigger filesystem expansion playbook
+          {% else %}
+          ✅ All filesystems are within acceptable thresholds
+          {% endif %}
+          
+          Log File: {{ log_file | default('N/A') }}
+          Results File: {{ results_file | default('N/A') }}
+          =====================================
+      tags: always
+    
+    - name: Send threshold alert notification
+      ansible.builtin.raw: |\
+        if [ -n "{{ alert_emails | default('') }}" ] && [ -n "{{ smtp_host | default('') }}" ] && [ "{{ expansion_needed | default('NO') }}" = "YES" ]; then
+          SUBJECT="🚨 AIX Filesystem Threshold Alert - {{ system_info.stdout_lines | select('match', '^HOSTNAME=') | first | regex_replace('HOSTNAME=', '') | default('unknown') }}"
+          
+          if command -v mail >/dev/null 2>&1; then
+            cat "{{ log_file | default('/dev/null') }}" | mail -s "$SUBJECT" "{{ alert_emails | join(',') }}" 2>/dev/null || echo "Failed to send alert email"
+            echo "Threshold alert email sent to: {{ alert_emails | join(',') }}"
+          else
+            echo "Mail command not available - skipping email notification"
+          fi
+        else
+          echo "No alert needed or email not configured"
+        fi
+      when: 
+        - expansion_needed is defined
+        - expansion_needed == 'YES'
+        - alert_emails is defined
+        - send_threshold_alerts | default(true) | bool
+      failed_when: false
+      tags: always

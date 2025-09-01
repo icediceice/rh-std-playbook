@@ -1,0 +1,360 @@
+---
+# AIX CPU Threshold Check Playbook
+# Checks CPU load against predefined thresholds
+# Sets workflow variables for AAP to trigger CPU scaling if needed
+# Compatible with AAP 2.5 workflow orchestration
+
+- name: AIX CPU Threshold Check
+  hosts: "{{ target_hosts | default('aix') }}"
+  gather_facts: false
+  become: true
+  
+  vars:
+    # Playbook identification for AAP
+    playbook_name: "AIX CPU Threshold Check"
+    playbook_version: "3.0"
+    
+    # AAP Job Information (automatically injected by AAP)
+    aap_job_template: "{{ tower_job_template_name | default('N/A') }}"
+    aap_job_id: "{{ tower_job_id | default('N/A') }}"
+    aap_user: "{{ tower_user_name | default('N/A') }}"
+    aap_inventory: "{{ tower_inventory_name | default('N/A') }}"
+    
+    # Change tracking for AAP (avoid recursive definition)
+    cpu_check_reason: "{{ change_reason | default('Automated CPU threshold monitoring') }}"
+    cpu_check_ticket: "{{ change_ticket | default('') }}"
+    
+    # CPU monitoring thresholds - can be overridden via survey
+    cpu_load_threshold: "{{ cpu_threshold | default(5.0) }}"
+    cpu_utilization_threshold: "{{ cpu_util_threshold | default(85) }}"
+    cpu_monitoring_duration: "{{ monitoring_duration_minutes | default(5) }}"
+    cpu_scale_increment: "{{ cpu_add_count | default(1) }}"
+    
+    # HMC Configuration (required for CPU scaling)
+    hmc_host: "{{ hmc_server | default('') }}"
+    hmc_user: "{{ hmc_username | default('') }}"
+    lpar_name: "{{ target_lpar_name | default('') }}"
+    
+    # Directory paths
+    aix_log_dir: "/bigc/log"
+    
+  pre_tasks:
+    - name: Gather minimal system facts
+      ansible.builtin.raw: |\
+        echo "HOSTNAME=$(hostname)"
+        echo "OS=$(uname -s)"
+        echo "DATE=$(date)"
+      register: system_info
+      changed_when: false
+      tags: always
+    
+    - name: Display CPU threshold check information
+      ansible.builtin.debug:
+        msg: |
+          =====================================
+          AIX CPU Threshold Check
+          =====================================
+          Version: {{ playbook_version }}
+          Target Hosts: {{ target_hosts | default('aix') }}
+          AAP Job Template: {{ aap_job_template }}
+          AAP Job ID: {{ aap_job_id }}
+          AAP User: {{ aap_user }}
+          Change Reason: {{ cpu_check_reason }}
+          Change Ticket: {{ cpu_check_ticket }}
+          Load Threshold: {{ cpu_load_threshold }}
+          Utilization Threshold: {{ cpu_utilization_threshold }}%
+          Monitoring Duration: {{ cpu_monitoring_duration }} minutes
+          HMC Host: {{ hmc_host | default('Not configured') }}
+          =====================================
+      tags: always
+    
+    - name: Validate target hosts
+      ansible.builtin.fail:
+        msg: "No valid AIX hosts found in inventory"
+      when: "'OS=AIX' not in system_info.stdout"
+      tags: always
+    
+    - name: Ensure log directory exists
+      ansible.builtin.raw: |\
+        [ -d "{{ aix_log_dir }}" ] || mkdir -p "{{ aix_log_dir }}"
+        chmod 755 "{{ aix_log_dir }}"
+      changed_when: false
+      tags: always
+
+  tasks:
+    - name: Check CPU load and utilization against thresholds
+      ansible.builtin.raw: |\
+        HOSTNAME=$(hostname)
+        LOG_FILE="{{ aix_log_dir }}/cpu_threshold_check_${HOSTNAME}_$(date +%Y%m%d_%H%M%S).log"
+        RESULTS_FILE="{{ aix_log_dir }}/cpu_threshold_results_${HOSTNAME}_$(date +%Y%m%d_%H%M%S).txt"
+        
+        echo "=============================== CPU THRESHOLD CHECK ===============================" > "$LOG_FILE"
+        echo "Date: $(date)" >> "$LOG_FILE"
+        echo "Hostname: $HOSTNAME" >> "$LOG_FILE"
+        echo "AAP Job ID: {{ aap_job_id }}" >> "$LOG_FILE"
+        echo "Change Ticket: {{ cpu_check_ticket }}" >> "$LOG_FILE"
+        echo "Load Threshold: {{ cpu_load_threshold }}" >> "$LOG_FILE"
+        echo "Utilization Threshold: {{ cpu_utilization_threshold }}%" >> "$LOG_FILE"
+        echo "Monitoring Duration: {{ cpu_monitoring_duration }} minutes" >> "$LOG_FILE"
+        echo "" >> "$LOG_FILE"
+        
+        # Initialize results
+        SCALING_NEEDED=NO
+        LOAD_THRESHOLD_EXCEEDED=NO
+        UTIL_THRESHOLD_EXCEEDED=NO
+        CURRENT_CPUS=0
+        RECOMMENDED_CPUS=0
+        
+        # Get current CPU information
+        echo "Getting current CPU configuration..." >> "$LOG_FILE"
+        
+        # Get number of online CPUs
+        if command -v lparstat >/dev/null 2>&1; then
+          CURRENT_CPUS=$(lparstat -i | grep "Online Virtual CPUs" | awk -F: '{print $2}' | tr -d ' ' 2>/dev/null || echo "0")
+          echo "Current Online Virtual CPUs: $CURRENT_CPUS" >> "$LOG_FILE"
+          
+          # Get current LPAR statistics
+          echo "" >> "$LOG_FILE"
+          echo "Current LPAR CPU Statistics:" >> "$LOG_FILE"
+          lparstat 1 1 >> "$LOG_FILE" 2>/dev/null || echo "Unable to get lparstat output" >> "$LOG_FILE"
+        else
+          echo "lparstat command not available" >> "$LOG_FILE"
+        fi
+        
+        # Check current load average
+        echo "" >> "$LOG_FILE"
+        echo "Checking current load average..." >> "$LOG_FILE"
+        
+        if command -v uptime >/dev/null 2>&1; then
+          UPTIME_OUTPUT=$(uptime)
+          echo "Uptime output: $UPTIME_OUTPUT" >> "$LOG_FILE"
+          
+          # Extract 15-minute load average (more stable for scaling decisions)
+          LOAD_15MIN=$(echo "$UPTIME_OUTPUT" | awk -F'load averages: ' '{print $2}' | awk '{print $3}' | tr -d ',' 2>/dev/null)
+          
+          if [ -z "$LOAD_15MIN" ]; then
+            # Alternative parsing for different uptime formats
+            LOAD_15MIN=$(echo "$UPTIME_OUTPUT" | awk -F'load average: ' '{print $2}' | awk '{print $3}' | tr -d ',' 2>/dev/null)
+          fi
+          
+          echo "Current 15-minute load average: $LOAD_15MIN" >> "$LOG_FILE"
+          
+          # Compare with threshold (using bc for floating point comparison if available)
+          if command -v bc >/dev/null 2>&1; then
+            LOAD_EXCEEDS=$(echo "$LOAD_15MIN > {{ cpu_load_threshold }}" | bc -l 2>/dev/null || echo "0")
+          else
+            # Fallback integer comparison (multiply by 100)
+            LOAD_INT=$(echo "$LOAD_15MIN * 100" | awk '{print int($1)}' 2>/dev/null || echo "0")
+            THRESHOLD_INT=$(echo "{{ cpu_load_threshold }} * 100" | awk '{print int($1)}' 2>/dev/null || echo "500")
+            LOAD_EXCEEDS=$([ "$LOAD_INT" -gt "$THRESHOLD_INT" ] && echo "1" || echo "0")
+          fi
+          
+          if [ "$LOAD_EXCEEDS" = "1" ]; then
+            echo "⚠️  LOAD THRESHOLD EXCEEDED: 15-min load ($LOAD_15MIN) > threshold ({{ cpu_load_threshold }})" >> "$LOG_FILE"
+            LOAD_THRESHOLD_EXCEEDED=YES
+            SCALING_NEEDED=YES
+          else
+            echo "✅ Load average within threshold: $LOAD_15MIN <= {{ cpu_load_threshold }}" >> "$LOG_FILE"
+          fi
+        else
+          echo "uptime command not available" >> "$LOG_FILE"
+        fi
+        
+        # Check CPU utilization over monitoring period
+        echo "" >> "$LOG_FILE"
+        echo "Monitoring CPU utilization for {{ cpu_monitoring_duration }} minute(s)..." >> "$LOG_FILE"
+        
+        if command -v lparstat >/dev/null 2>&1; then
+          # Sample CPU utilization
+          UTIL_SAMPLES=3
+          TOTAL_UTIL=0
+          SAMPLE_COUNT=0
+          
+          for i in $(seq 1 $UTIL_SAMPLES); do
+            echo "Taking CPU utilization sample $i/$UTIL_SAMPLES..." >> "$LOG_FILE"
+            
+            # Get current CPU utilization
+            CPU_UTIL=$(lparstat 5 1 | tail -1 | awk '{print $4}' 2>/dev/null | tr -d '%')
+            
+            if [ -n "$CPU_UTIL" ] && [ "$CPU_UTIL" != "0" ]; then
+              echo "  Sample $i: ${CPU_UTIL}% CPU utilization" >> "$LOG_FILE"
+              TOTAL_UTIL=$(echo "$TOTAL_UTIL + $CPU_UTIL" | bc -l 2>/dev/null || awk "BEGIN {print $TOTAL_UTIL + $CPU_UTIL}")
+              SAMPLE_COUNT=$((SAMPLE_COUNT + 1))
+            else
+              echo "  Sample $i: Unable to get CPU utilization" >> "$LOG_FILE"
+            fi
+            
+            # Sleep between samples (except for last sample)
+            if [ $i -lt $UTIL_SAMPLES ]; then
+              sleep 10
+            fi
+          done
+          
+          if [ "$SAMPLE_COUNT" -gt 0 ]; then
+            AVG_CPU_UTIL=$(echo "scale=2; $TOTAL_UTIL / $SAMPLE_COUNT" | bc -l 2>/dev/null || awk "BEGIN {printf \"%.2f\", $TOTAL_UTIL / $SAMPLE_COUNT}")
+            echo "" >> "$LOG_FILE"
+            echo "Average CPU Utilization: ${AVG_CPU_UTIL}%" >> "$LOG_FILE"
+            
+            # Check against threshold
+            UTIL_EXCEEDS=$(echo "$AVG_CPU_UTIL > {{ cpu_utilization_threshold }}" | bc -l 2>/dev/null || echo "0")
+            
+            if [ "$UTIL_EXCEEDS" = "1" ]; then
+              echo "⚠️  UTILIZATION THRESHOLD EXCEEDED: Average CPU (${AVG_CPU_UTIL}%) > threshold ({{ cpu_utilization_threshold }}%)" >> "$LOG_FILE"
+              UTIL_THRESHOLD_EXCEEDED=YES
+              SCALING_NEEDED=YES
+            else
+              echo "✅ CPU utilization within threshold: ${AVG_CPU_UTIL}% <= {{ cpu_utilization_threshold }}%" >> "$LOG_FILE"
+            fi
+          else
+            echo "Unable to calculate average CPU utilization" >> "$LOG_FILE"
+          fi
+        else
+          echo "lparstat command not available for utilization monitoring" >> "$LOG_FILE"
+        fi
+        
+        # Calculate recommended CPU count
+        if [ "$SCALING_NEEDED" = "YES" ] && [ "$CURRENT_CPUS" -gt 0 ]; then
+          RECOMMENDED_CPUS=$((CURRENT_CPUS + {{ cpu_scale_increment }}))
+          echo "" >> "$LOG_FILE"
+          echo "📈 CPU Scaling Recommendation:" >> "$LOG_FILE"
+          echo "  Current CPUs: $CURRENT_CPUS" >> "$LOG_FILE"
+          echo "  Recommended CPUs: $RECOMMENDED_CPUS (add {{ cpu_scale_increment }})" >> "$LOG_FILE"
+        fi
+        
+        # Generate summary
+        echo "" >> "$LOG_FILE"
+        echo "=============================== SUMMARY ===============================" >> "$LOG_FILE"
+        echo "Current Virtual CPUs: $CURRENT_CPUS" >> "$LOG_FILE"
+        echo "Load threshold exceeded: $LOAD_THRESHOLD_EXCEEDED" >> "$LOG_FILE"
+        echo "Utilization threshold exceeded: $UTIL_THRESHOLD_EXCEEDED" >> "$LOG_FILE"
+        echo "CPU scaling needed: $SCALING_NEEDED" >> "$LOG_FILE"
+        echo "Recommended CPUs: $RECOMMENDED_CPUS" >> "$LOG_FILE"
+        echo "HMC Host configured: {{ 'YES' if hmc_host else 'NO' }}" >> "$LOG_FILE"
+        echo "" >> "$LOG_FILE"
+        echo "Completed at: $(date)" >> "$LOG_FILE"
+        
+        # Create results file for workflow
+        cat > "$RESULTS_FILE" << EOF
+        SCALING_NEEDED=$SCALING_NEEDED
+        LOAD_THRESHOLD_EXCEEDED=$LOAD_THRESHOLD_EXCEEDED
+        UTIL_THRESHOLD_EXCEEDED=$UTIL_THRESHOLD_EXCEEDED
+        CURRENT_CPUS=$CURRENT_CPUS
+        RECOMMENDED_CPUS=$RECOMMENDED_CPUS
+        CPU_SCALE_INCREMENT={{ cpu_scale_increment }}
+        HOSTNAME=$HOSTNAME
+        TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+        AAP_JOB_ID={{ aap_job_id }}
+        CHANGE_TICKET={{ cpu_check_ticket }}
+        HMC_HOST={{ hmc_host }}
+        LPAR_NAME={{ lpar_name }}
+        EOF
+        
+        # Output for Ansible
+        echo "SCALING_NEEDED=$SCALING_NEEDED"
+        echo "LOAD_THRESHOLD_EXCEEDED=$LOAD_THRESHOLD_EXCEEDED"
+        echo "UTIL_THRESHOLD_EXCEEDED=$UTIL_THRESHOLD_EXCEEDED"
+        echo "CURRENT_CPUS=$CURRENT_CPUS"
+        echo "RECOMMENDED_CPUS=$RECOMMENDED_CPUS"
+        echo "LOG_FILE=$LOG_FILE"
+        echo "RESULTS_FILE=$RESULTS_FILE"
+      register: cpu_threshold_check_results
+      changed_when: false
+      tags:
+        - threshold_check
+        - cpu
+    
+    - name: Parse CPU threshold check results
+      ansible.builtin.set_fact:
+        cpu_scaling_needed: "{{ cpu_threshold_check_results.stdout_lines | select('match', '^SCALING_NEEDED=') | first | regex_replace('SCALING_NEEDED=', '') }}"
+        cpu_load_exceeded: "{{ cpu_threshold_check_results.stdout_lines | select('match', '^LOAD_THRESHOLD_EXCEEDED=') | first | regex_replace('LOAD_THRESHOLD_EXCEEDED=', '') }}"
+        cpu_util_exceeded: "{{ cpu_threshold_check_results.stdout_lines | select('match', '^UTIL_THRESHOLD_EXCEEDED=') | first | regex_replace('UTIL_THRESHOLD_EXCEEDED=', '') }}"
+        cpu_current_count: "{{ cpu_threshold_check_results.stdout_lines | select('match', '^CURRENT_CPUS=') | first | regex_replace('CURRENT_CPUS=', '') }}"
+        cpu_recommended_count: "{{ cpu_threshold_check_results.stdout_lines | select('match', '^RECOMMENDED_CPUS=') | first | regex_replace('RECOMMENDED_CPUS=', '') }}"
+        cpu_log_file: "{{ cpu_threshold_check_results.stdout_lines | select('match', '^LOG_FILE=') | first | regex_replace('LOG_FILE=', '') }}"
+        cpu_results_file: "{{ cpu_threshold_check_results.stdout_lines | select('match', '^RESULTS_FILE=') | first | regex_replace('RESULTS_FILE=', '') }}"
+      tags: threshold_check
+    
+    # Set workflow variables for AAP
+    - name: Set AAP workflow variables for CPU scaling
+      ansible.builtin.set_stats:
+        data:
+          cpu_scaling_needed: "{{ cpu_scaling_needed }}"
+          cpu_load_threshold_exceeded: "{{ cpu_load_exceeded }}"
+          cpu_utilization_threshold_exceeded: "{{ cpu_util_exceeded }}"
+          cpu_current_count: "{{ cpu_current_count }}"
+          cpu_recommended_count: "{{ cpu_recommended_count }}"
+          cpu_scale_increment: "{{ cpu_scale_increment }}"
+          cpu_check_completed: "YES"
+          cpu_log_file: "{{ cpu_log_file }}"
+          cpu_results_file: "{{ cpu_results_file }}"
+          cpu_hostname: "{{ system_info.stdout_lines | select('match', '^HOSTNAME=') | first | regex_replace('HOSTNAME=', '') | default('unknown') }}"
+          cpu_check_timestamp: "{{ system_info.stdout_lines | select('match', '^DATE=') | first | regex_replace('DATE=', '') | default('N/A') }}"
+          cpu_hmc_host: "{{ hmc_host }}"
+          cpu_lpar_name: "{{ lpar_name }}"
+        aggregate: false
+      tags: threshold_check
+
+  post_tasks:
+    - name: Display CPU threshold check summary
+      ansible.builtin.debug:
+        msg: |
+          =====================================
+          CPU Threshold Check Summary
+          =====================================
+          Host: {{ system_info.stdout_lines | select('match', '^HOSTNAME=') | first | regex_replace('HOSTNAME=', '') | default('unknown') }}
+          Execution Time: {{ system_info.stdout_lines | select('match', '^DATE=') | first | regex_replace('DATE=', '') | default('N/A') }}
+          Current Virtual CPUs: {{ cpu_current_count | default('Unknown') }}
+          
+          Threshold Status:
+          - Load Threshold ({{ cpu_load_threshold }}): {{ '❌ EXCEEDED' if cpu_load_exceeded == 'YES' else '✅ OK' }}
+          - Utilization Threshold ({{ cpu_utilization_threshold }}%): {{ '❌ EXCEEDED' if cpu_util_exceeded == 'YES' else '✅ OK' }}
+          
+          CPU Scaling Needed: {{ cpu_scaling_needed | default('NO') }}
+          
+          {% if cpu_scaling_needed == 'YES' %}
+          🚨 ACTION REQUIRED: CPU scaling needed!
+          
+          Scaling Recommendation:
+          - Current CPUs: {{ cpu_current_count }}
+          - Recommended CPUs: {{ cpu_recommended_count }}
+          - CPUs to Add: {{ cpu_scale_increment }}
+          
+          HMC Configuration:
+          - HMC Host: {{ hmc_host | default('Not configured') }}
+          - LPAR Name: {{ lpar_name | default('Not configured') }}
+          
+          {% if not hmc_host or not lpar_name %}
+          ⚠️  WARNING: HMC configuration incomplete. CPU scaling may fail.
+          {% endif %}
+          
+          Next Step: AAP workflow should trigger CPU scaling playbook
+          {% else %}
+          ✅ CPU resources are within acceptable thresholds
+          {% endif %}
+          
+          Log File: {{ cpu_log_file | default('N/A') }}
+          Results File: {{ cpu_results_file | default('N/A') }}
+          =====================================
+      tags: always
+    
+    - name: Send CPU threshold alert notification
+      ansible.builtin.raw: |\
+        if [ -n "{{ alert_emails | default('') }}" ] && [ -n "{{ smtp_host | default('') }}" ] && [ "{{ cpu_scaling_needed | default('NO') }}" = "YES" ]; then
+          SUBJECT="🚨 AIX CPU Threshold Alert - {{ system_info.stdout_lines | select('match', '^HOSTNAME=') | first | regex_replace('HOSTNAME=', '') | default('unknown') }}"
+          
+          if command -v mail >/dev/null 2>&1; then
+            cat "{{ cpu_log_file | default('/dev/null') }}" | mail -s "$SUBJECT" "{{ alert_emails | join(',') }}" 2>/dev/null || echo "Failed to send alert email"
+            echo "CPU threshold alert email sent to: {{ alert_emails | join(',') }}"
+          else
+            echo "Mail command not available - skipping email notification"
+          fi
+        else
+          echo "No alert needed or email not configured"
+        fi
+      when: 
+        - cpu_scaling_needed is defined
+        - cpu_scaling_needed == 'YES'
+        - alert_emails is defined
+        - send_threshold_alerts | default(true) | bool
+      failed_when: false
+      tags: always

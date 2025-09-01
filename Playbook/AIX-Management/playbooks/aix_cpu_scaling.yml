@@ -1,0 +1,406 @@
+---
+# AIX CPU Scaling Playbook
+# Scales CPU resources based on threshold check results from workflow
+# Compatible with AAP 2.5 workflow orchestration and HMC integration
+# Triggered when CPU thresholds are exceeded
+
+- name: AIX CPU Scaling
+  hosts: "{{ target_hosts | default('aix') }}"
+  gather_facts: false
+  become: true
+  
+  vars:
+    # Playbook identification for AAP
+    playbook_name: "AIX CPU Scaling"
+    playbook_version: "3.0"
+    
+    # AAP Job Information (automatically injected by AAP)
+    aap_job_template: "{{ tower_job_template_name | default('N/A') }}"
+    aap_job_id: "{{ tower_job_id | default('N/A') }}"
+    aap_user: "{{ tower_user_name | default('N/A') }}"
+    aap_inventory: "{{ tower_inventory_name | default('N/A') }}"
+    
+    # Change tracking for AAP (avoid recursive definition)
+    cpu_scaling_reason: "{{ change_reason | default('Automated CPU scaling based on threshold alert') }}"
+    cpu_scaling_ticket: "{{ change_ticket | default('') }}"
+    
+    # CPU scaling configuration - can be from workflow variables or survey
+    current_cpu_count: "{{ cpu_current_count | default(0) }}"
+    recommended_cpu_count: "{{ cpu_recommended_count | default(0) }}"
+    cpu_scale_increment: "{{ cpu_scale_increment | default(1) }}"
+    scaling_mode: "{{ cpu_scaling_mode | default('auto') }}"  # auto, manual, simulation
+    max_cpu_limit: "{{ max_cpu_count | default(32) }}"  # Safety limit
+    
+    # HMC Configuration (required for CPU scaling)
+    hmc_host: "{{ hmc_server | default(cpu_hmc_host) | default('') }}"
+    hmc_user: "{{ hmc_username | default('hscroot') }}"
+    hmc_password: "{{ hmc_user_password | default('') }}"
+    hmc_ssh_key: "{{ hmc_ssh_key_path | default('') }}"
+    
+    # LPAR Configuration
+    lpar_name: "{{ target_lpar_name | default(cpu_lpar_name) | default('') }}"
+    managed_system: "{{ hmc_managed_system | default('') }}"
+    
+    # Directory paths
+    aix_log_dir: "/bigc/log"
+    
+  pre_tasks:
+    - name: Gather minimal system facts
+      ansible.builtin.raw: |\
+        echo "HOSTNAME=$(hostname)"
+        echo "OS=$(uname -s)"
+        echo "DATE=$(date)"
+      register: system_info
+      changed_when: false
+      tags: always
+    
+    - name: Display CPU scaling information
+      ansible.builtin.debug:
+        msg: |
+          =====================================
+          AIX CPU Scaling
+          =====================================
+          Version: {{ playbook_version }}
+          Target Hosts: {{ target_hosts | default('aix') }}
+          AAP Job Template: {{ aap_job_template }}
+          AAP Job ID: {{ aap_job_id }}
+          AAP User: {{ aap_user }}
+          Change Reason: {{ cpu_scaling_reason }}
+          Change Ticket: {{ cpu_scaling_ticket }}
+          Scaling Mode: {{ scaling_mode }}
+          Current CPUs: {{ current_cpu_count }}
+          Recommended CPUs: {{ recommended_cpu_count }}
+          Scale Increment: {{ cpu_scale_increment }}
+          Max CPU Limit: {{ max_cpu_limit }}
+          HMC Host: {{ hmc_host | default('Not configured') }}
+          LPAR Name: {{ lpar_name | default('Not configured') }}
+          =====================================
+      tags: always
+    
+    - name: Validate target hosts
+      ansible.builtin.fail:
+        msg: "No valid AIX hosts found in inventory"
+      when: "'OS=AIX' not in system_info.stdout"
+      tags: always
+    
+    - name: Validate CPU scaling parameters
+      ansible.builtin.fail:
+        msg: "Invalid CPU scaling parameters. Current: {{ current_cpu_count }}, Recommended: {{ recommended_cpu_count }}"
+      when: 
+        - current_cpu_count | int == 0 or recommended_cpu_count | int == 0
+        - scaling_mode != 'simulation'
+      tags: always
+    
+    - name: Validate HMC configuration for non-simulation mode
+      ansible.builtin.fail:
+        msg: "HMC configuration incomplete. Required: hmc_host, lpar_name, managed_system"
+      when: 
+        - scaling_mode != 'simulation'
+        - (hmc_host == '' or lpar_name == '' or managed_system == '')
+      tags: always
+    
+    - name: Ensure log directory exists
+      ansible.builtin.raw: |\
+        [ -d "{{ aix_log_dir }}" ] || mkdir -p "{{ aix_log_dir }}"
+        chmod 755 "{{ aix_log_dir }}"
+      changed_when: false
+      tags: always
+
+  tasks:
+    - name: Pre-scaling validation and CPU scaling execution
+      ansible.builtin.raw: |\
+        HOSTNAME=$(hostname)
+        LOG_FILE="{{ aix_log_dir }}/cpu_scaling_${HOSTNAME}_$(date +%Y%m%d_%H%M%S).log"
+        
+        echo "=============================== CPU SCALING ===============================" > "$LOG_FILE"
+        echo "Date: $(date)" >> "$LOG_FILE"
+        echo "Hostname: $HOSTNAME" >> "$LOG_FILE"
+        echo "AAP Job ID: {{ aap_job_id }}" >> "$LOG_FILE"
+        echo "Change Ticket: {{ cpu_scaling_ticket }}" >> "$LOG_FILE"
+        echo "Scaling Mode: {{ scaling_mode }}" >> "$LOG_FILE"
+        echo "Current CPUs: {{ current_cpu_count }}" >> "$LOG_FILE"
+        echo "Recommended CPUs: {{ recommended_cpu_count }}" >> "$LOG_FILE"
+        echo "Scale Increment: {{ cpu_scale_increment }}" >> "$LOG_FILE"
+        echo "HMC Host: {{ hmc_host }}" >> "$LOG_FILE"
+        echo "LPAR Name: {{ lpar_name }}" >> "$LOG_FILE"
+        echo "Managed System: {{ managed_system }}" >> "$LOG_FILE"
+        echo "" >> "$LOG_FILE"
+        
+        # Initialize results
+        SCALING_SUCCESS=YES
+        NEW_CPU_COUNT=0
+        SCALING_DETAILS=""
+        
+        # Validate current LPAR CPU configuration
+        echo "Validating current LPAR CPU configuration..." >> "$LOG_FILE"
+        
+        if command -v lparstat >/dev/null 2>&1; then
+          CURRENT_ONLINE_CPUS=$(lparstat -i | grep "Online Virtual CPUs" | awk -F: '{print $2}' | tr -d ' ' 2>/dev/null)
+          CURRENT_MAX_CPUS=$(lparstat -i | grep "Maximum Virtual CPUs" | awk -F: '{print $2}' | tr -d ' ' 2>/dev/null)
+          CURRENT_MIN_CPUS=$(lparstat -i | grep "Minimum Virtual CPUs" | awk -F: '{print $2}' | tr -d ' ' 2>/dev/null)
+          
+          echo "Current Online Virtual CPUs: $CURRENT_ONLINE_CPUS" >> "$LOG_FILE"
+          echo "Current Maximum Virtual CPUs: $CURRENT_MAX_CPUS" >> "$LOG_FILE"
+          echo "Current Minimum Virtual CPUs: $CURRENT_MIN_CPUS" >> "$LOG_FILE"
+          
+          # Verify against workflow provided values
+          if [ "$CURRENT_ONLINE_CPUS" != "{{ current_cpu_count }}" ]; then
+            echo "⚠️  WARNING: Current CPU count mismatch - LPAR reports $CURRENT_ONLINE_CPUS, workflow reports {{ current_cpu_count }}" >> "$LOG_FILE"
+            echo "Using LPAR reported value: $CURRENT_ONLINE_CPUS" >> "$LOG_FILE"
+            ACTUAL_CURRENT_CPUS=$CURRENT_ONLINE_CPUS
+          else
+            ACTUAL_CURRENT_CPUS={{ current_cpu_count }}
+          fi
+        else
+          echo "❌ lparstat command not available - cannot validate current CPU configuration" >> "$LOG_FILE"
+          SCALING_SUCCESS=NO
+          ACTUAL_CURRENT_CPUS={{ current_cpu_count }}
+        fi
+        
+        # Calculate target CPU count
+        TARGET_CPU_COUNT={{ recommended_cpu_count }}
+        
+        # Safety checks
+        echo "" >> "$LOG_FILE"
+        echo "Performing safety checks..." >> "$LOG_FILE"
+        
+        if [ "$TARGET_CPU_COUNT" -gt "{{ max_cpu_limit }}" ] 2>/dev/null; then
+          echo "⚠️  WARNING: Target CPU count ($TARGET_CPU_COUNT) exceeds safety limit ({{ max_cpu_limit }})" >> "$LOG_FILE"
+          echo "Limiting target to {{ max_cpu_limit }} CPUs" >> "$LOG_FILE"
+          TARGET_CPU_COUNT={{ max_cpu_limit }}
+        fi
+        
+        if [ "$TARGET_CPU_COUNT" -le "$ACTUAL_CURRENT_CPUS" ] 2>/dev/null; then
+          echo "ℹ️  INFO: Target CPU count ($TARGET_CPU_COUNT) is not greater than current ($ACTUAL_CURRENT_CPUS)" >> "$LOG_FILE"
+          echo "No scaling needed" >> "$LOG_FILE"
+          NEW_CPU_COUNT=$ACTUAL_CURRENT_CPUS
+        else
+          echo "✅ CPU scaling validated - will scale from $ACTUAL_CURRENT_CPUS to $TARGET_CPU_COUNT CPUs" >> "$LOG_FILE"
+          
+          # Perform CPU scaling based on mode
+          echo "" >> "$LOG_FILE"
+          if [ "{{ scaling_mode }}" = "simulation" ]; then
+            echo "🔍 SIMULATION MODE: Would scale CPU from $ACTUAL_CURRENT_CPUS to $TARGET_CPU_COUNT" >> "$LOG_FILE"
+            echo "HMC command that would be executed:" >> "$LOG_FILE"
+            echo "  ssh {{ hmc_user }}@{{ hmc_host }} 'chhwres -r proc -m {{ managed_system }} -o s -p {{ lpar_name }} --procunits $TARGET_CPU_COUNT -w 5'" >> "$LOG_FILE"
+            NEW_CPU_COUNT=$TARGET_CPU_COUNT
+            SCALING_DETAILS="SIMULATION:${ACTUAL_CURRENT_CPUS}to${TARGET_CPU_COUNT}"
+          else
+            echo "📈 Executing CPU scaling via HMC..." >> "$LOG_FILE"
+            
+            # Test HMC connectivity first
+            echo "Testing HMC connectivity..." >> "$LOG_FILE"
+            
+            {% if hmc_ssh_key and hmc_ssh_key != '' %}
+            HMC_SSH_CMD="ssh -i {{ hmc_ssh_key }} -o ConnectTimeout=10 -o StrictHostKeyChecking=no"
+            {% else %}
+            HMC_SSH_CMD="ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no"
+            {% endif %}
+            
+            if $HMC_SSH_CMD {{ hmc_user }}@{{ hmc_host }} 'lshmc -n' >> "$LOG_FILE" 2>&1; then
+              echo "✅ HMC connectivity successful" >> "$LOG_FILE"
+              
+              # Execute CPU scaling command
+              echo "Executing CPU scaling command..." >> "$LOG_FILE"
+              HMC_SCALE_CMD="chhwres -r proc -m {{ managed_system }} -o s -p {{ lpar_name }} --procunits $TARGET_CPU_COUNT -w 5"
+              echo "Command: $HMC_SCALE_CMD" >> "$LOG_FILE"
+              
+              if $HMC_SSH_CMD {{ hmc_user }}@{{ hmc_host }} "$HMC_SCALE_CMD" >> "$LOG_FILE" 2>&1; then
+                echo "✅ CPU scaling command executed successfully" >> "$LOG_FILE"
+                
+                # Wait for scaling to complete
+                echo "Waiting for CPU scaling to take effect..." >> "$LOG_FILE"
+                sleep 10
+                
+                # Verify scaling result
+                if command -v lparstat >/dev/null 2>&1; then
+                  UPDATED_CPU_COUNT=$(lparstat -i | grep "Online Virtual CPUs" | awk -F: '{print $2}' | tr -d ' ' 2>/dev/null)
+                  echo "Post-scaling CPU count: $UPDATED_CPU_COUNT" >> "$LOG_FILE"
+                  
+                  if [ "$UPDATED_CPU_COUNT" = "$TARGET_CPU_COUNT" ]; then
+                    echo "✅ CPU scaling verified - successfully scaled to $TARGET_CPU_COUNT CPUs" >> "$LOG_FILE"
+                    NEW_CPU_COUNT=$UPDATED_CPU_COUNT
+                    SCALING_DETAILS="SUCCESS:${ACTUAL_CURRENT_CPUS}to${NEW_CPU_COUNT}"
+                  else
+                    echo "⚠️  WARNING: CPU scaling partially successful - target $TARGET_CPU_COUNT, actual $UPDATED_CPU_COUNT" >> "$LOG_FILE"
+                    NEW_CPU_COUNT=$UPDATED_CPU_COUNT
+                    SCALING_DETAILS="PARTIAL:${ACTUAL_CURRENT_CPUS}to${NEW_CPU_COUNT}target${TARGET_CPU_COUNT}"
+                  fi
+                else
+                  echo "⚠️  WARNING: Unable to verify CPU scaling result - lparstat not available" >> "$LOG_FILE"
+                  NEW_CPU_COUNT=$TARGET_CPU_COUNT
+                  SCALING_DETAILS="UNKNOWN:${ACTUAL_CURRENT_CPUS}to${NEW_CPU_COUNT}"
+                fi
+              else
+                echo "❌ CPU scaling command failed" >> "$LOG_FILE"
+                SCALING_SUCCESS=NO
+                NEW_CPU_COUNT=$ACTUAL_CURRENT_CPUS
+                SCALING_DETAILS="FAILED:HMC_COMMAND_ERROR"
+              fi
+            else
+              echo "❌ HMC connectivity failed - cannot execute CPU scaling" >> "$LOG_FILE"
+              SCALING_SUCCESS=NO
+              NEW_CPU_COUNT=$ACTUAL_CURRENT_CPUS
+              SCALING_DETAILS="FAILED:HMC_CONNECTIVITY"
+            fi
+          fi
+        fi
+        
+        # Generate final LPAR statistics
+        echo "" >> "$LOG_FILE"
+        echo "Final LPAR CPU statistics:" >> "$LOG_FILE"
+        if command -v lparstat >/dev/null 2>&1; then
+          lparstat -i | grep -i "Virtual CPUs" >> "$LOG_FILE" 2>/dev/null || echo "Unable to get final CPU statistics" >> "$LOG_FILE"
+        fi
+        
+        # Generate summary
+        echo "" >> "$LOG_FILE"
+        echo "=============================== SCALING SUMMARY ===============================" >> "$LOG_FILE"
+        echo "Scaling mode: {{ scaling_mode }}" >> "$LOG_FILE"
+        echo "Original CPU count: $ACTUAL_CURRENT_CPUS" >> "$LOG_FILE"
+        echo "Target CPU count: $TARGET_CPU_COUNT" >> "$LOG_FILE"
+        echo "Final CPU count: $NEW_CPU_COUNT" >> "$LOG_FILE"
+        echo "Scaling success: $SCALING_SUCCESS" >> "$LOG_FILE"
+        echo "Scaling details: $SCALING_DETAILS" >> "$LOG_FILE"
+        echo "" >> "$LOG_FILE"
+        echo "Completed at: $(date)" >> "$LOG_FILE"
+        
+        # Output for Ansible
+        echo "SCALING_SUCCESS=$SCALING_SUCCESS"
+        echo "ORIGINAL_CPU_COUNT=$ACTUAL_CURRENT_CPUS"
+        echo "TARGET_CPU_COUNT=$TARGET_CPU_COUNT"
+        echo "NEW_CPU_COUNT=$NEW_CPU_COUNT"
+        echo "SCALING_DETAILS=$SCALING_DETAILS"
+        echo "LOG_FILE=$LOG_FILE"
+      register: cpu_scaling_results
+      changed_when: scaling_mode != 'simulation' and 'SUCCESS' in cpu_scaling_results.stdout
+      failed_when: false
+      tags:
+        - scaling
+        - cpu
+    
+    - name: Parse CPU scaling results
+      ansible.builtin.set_fact:
+        cpu_scaling_success: "{{ cpu_scaling_results.stdout_lines | select('match', '^SCALING_SUCCESS=') | first | regex_replace('SCALING_SUCCESS=', '') }}"
+        cpu_original_count: "{{ cpu_scaling_results.stdout_lines | select('match', '^ORIGINAL_CPU_COUNT=') | first | regex_replace('ORIGINAL_CPU_COUNT=', '') }}"
+        cpu_target_count: "{{ cpu_scaling_results.stdout_lines | select('match', '^TARGET_CPU_COUNT=') | first | regex_replace('TARGET_CPU_COUNT=', '') }}"
+        cpu_new_count: "{{ cpu_scaling_results.stdout_lines | select('match', '^NEW_CPU_COUNT=') | first | regex_replace('NEW_CPU_COUNT=', '') }}"
+        cpu_scaling_details: "{{ cpu_scaling_results.stdout_lines | select('match', '^SCALING_DETAILS=') | first | regex_replace('SCALING_DETAILS=', '') }}"
+        cpu_scaling_log_file: "{{ cpu_scaling_results.stdout_lines | select('match', '^LOG_FILE=') | first | regex_replace('LOG_FILE=', '') }}"
+      tags: scaling
+    
+    # Set workflow variables for AAP
+    - name: Set AAP workflow variables for CPU scaling results
+      ansible.builtin.set_stats:
+        data:
+          cpu_scaling_completed: "YES"
+          cpu_scaling_success: "{{ cpu_scaling_success }}"
+          cpu_original_count: "{{ cpu_original_count }}"
+          cpu_target_count: "{{ cpu_target_count }}"
+          cpu_new_count: "{{ cpu_new_count }}"
+          cpu_scaling_details: "{{ cpu_scaling_details }}"
+          cpu_scaling_mode: "{{ scaling_mode }}"
+          cpu_scaling_log: "{{ cpu_scaling_log_file }}"
+          cpu_scaling_timestamp: "{{ system_info.stdout_lines | select('match', '^DATE=') | first | regex_replace('DATE=', '') | default('N/A') }}"
+          cpu_scaling_hostname: "{{ system_info.stdout_lines | select('match', '^HOSTNAME=') | first | regex_replace('HOSTNAME=', '') | default('unknown') }}"
+          cpu_hmc_used: "{{ hmc_host }}"
+          cpu_lpar_scaled: "{{ lpar_name }}"
+        aggregate: false
+      tags: scaling
+
+  post_tasks:
+    - name: Display CPU scaling summary
+      ansible.builtin.debug:
+        msg: |
+          =====================================
+          CPU Scaling Summary
+          =====================================
+          Host: {{ system_info.stdout_lines | select('match', '^HOSTNAME=') | first | regex_replace('HOSTNAME=', '') | default('unknown') }}
+          Execution Time: {{ system_info.stdout_lines | select('match', '^DATE=') | first | regex_replace('DATE=', '') | default('N/A') }}
+          Scaling Mode: {{ scaling_mode }}
+          
+          CPU Scaling Results:
+          - Original CPU Count: {{ cpu_original_count | default('Unknown') }}
+          - Target CPU Count: {{ cpu_target_count | default('Unknown') }}
+          - New CPU Count: {{ cpu_new_count | default('Unknown') }}
+          - Scaling Success: {{ cpu_scaling_success | default('Unknown') }}
+          
+          {% if cpu_scaling_details and cpu_scaling_details != '' %}
+          Scaling Details: {{ cpu_scaling_details }}
+          {% endif %}
+          
+          {% if scaling_mode == 'simulation' %}
+          🔍 SIMULATION MODE: No actual changes were made
+          {% elif cpu_scaling_success == 'YES' %}
+          ✅ CPU scaling completed successfully
+          {% if cpu_new_count != cpu_original_count %}
+          📈 CPUs scaled from {{ cpu_original_count }} to {{ cpu_new_count }}
+          {% else %}
+          ℹ️  No scaling was needed
+          {% endif %}
+          {% else %}
+          ❌ CPU scaling failed - check logs for details
+          {% endif %}
+          
+          HMC Configuration:
+          - HMC Host: {{ hmc_host }}
+          - LPAR Name: {{ lpar_name }}
+          - Managed System: {{ managed_system }}
+          
+          Log File: {{ cpu_scaling_log_file | default('N/A') }}
+          =====================================
+      tags: always
+    
+    - name: Send CPU scaling completion notification
+      ansible.builtin.raw: |\
+        if [ -n "{{ alert_emails | default('') }}" ] && [ -n "{{ smtp_host | default('') }}" ]; then
+          if [ "{{ cpu_scaling_success | default('NO') }}" = "YES" ]; then
+            SUBJECT="✅ AIX CPU Scaling Completed - {{ system_info.stdout_lines | select('match', '^HOSTNAME=') | first | regex_replace('HOSTNAME=', '') | default('unknown') }}"
+          else
+            SUBJECT="❌ AIX CPU Scaling Issues - {{ system_info.stdout_lines | select('match', '^HOSTNAME=') | first | regex_replace('HOSTNAME=', '') | default('unknown') }}"
+          fi
+          
+          if command -v mail >/dev/null 2>&1; then
+            {
+              echo "CPU scaling completed with the following results:"
+              echo ""
+              echo "Mode: {{ scaling_mode }}"
+              echo "Original CPUs: {{ cpu_original_count | default('Unknown') }}"
+              echo "Target CPUs: {{ cpu_target_count | default('Unknown') }}"
+              echo "New CPUs: {{ cpu_new_count | default('Unknown') }}"
+              echo "Scaling success: {{ cpu_scaling_success | default('Unknown') }}"
+              echo ""
+              echo "HMC Host: {{ hmc_host }}"
+              echo "LPAR: {{ lpar_name }}"
+              echo "Managed System: {{ managed_system }}"
+              echo ""
+              echo "See detailed log: {{ cpu_scaling_log_file | default('N/A') }}"
+            } | mail -s "$SUBJECT" "{{ alert_emails | join(',') }}" 2>/dev/null || echo "Failed to send completion email"
+            echo "CPU scaling notification sent to: {{ alert_emails | join(',') }}"
+          else
+            echo "Mail command not available - skipping email notification"
+          fi
+        else
+          echo "Email notification not configured or not needed"
+        fi
+      when: 
+        - alert_emails is defined
+        - send_completion_email | default(true) | bool
+      failed_when: false
+      tags: always
+    
+    - name: Fail playbook if CPU scaling failed
+      ansible.builtin.fail:
+        msg: |
+          CPU scaling failed!
+          - Original CPUs: {{ cpu_original_count | default('Unknown') }}
+          - Target CPUs: {{ cpu_target_count | default('Unknown') }}
+          - New CPUs: {{ cpu_new_count | default('Unknown') }}
+          - Scaling details: {{ cpu_scaling_details | default('Unknown') }}
+          - Check log file: {{ cpu_scaling_log_file | default('N/A') }}
+      when: 
+        - cpu_scaling_success is defined
+        - cpu_scaling_success != 'YES'
+        - scaling_mode != 'simulation'
+        - fail_on_scaling_error | default(true) | bool
+      tags: always
