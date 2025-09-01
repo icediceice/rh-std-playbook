@@ -5,7 +5,7 @@
 
 - name: AIX SSH Command Management Validation
   hosts: "{{ target_hosts | default('aix') }}"
-  gather_facts: true
+  gather_facts: false
   become: true
   
   vars:
@@ -45,10 +45,18 @@
           =====================================
       tags: always
     
-    - name: Validate target hosts
+    - name: Gather minimal facts for validation
+      ansible.builtin.raw: |
+        echo "HOSTNAME=$(hostname)"
+        echo "OS=$(uname -s)"
+      register: system_info
+      changed_when: false
+      tags: always
+    
+    - name: Validate target hosts  
       ansible.builtin.fail:
         msg: "Target host is not running AIX"
-      when: ansible_system is not defined or ansible_system != "AIX"
+      when: "'OS=AIX' not in system_info.stdout"
       tags: always
 
   tasks:
