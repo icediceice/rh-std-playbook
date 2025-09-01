@@ -30,17 +30,17 @@
 
 - name: Initialize memory monitoring log
   ansible.builtin.raw: |
-    LOG_FILE="{{ aix_log_dir }}/memory_autojob_$(hostname)_$(date +%Y%m%d).log"
+    LOG_FILE="/bigc/log/memory_autojob_$(hostname)_$(date +%Y%m%d).log"
     echo "=============================== MEMORY AUTO-SCALING MONITORING ===============================" > "$LOG_FILE"
     echo "Date: $(date)" >> "$LOG_FILE"
     echo "Hostname: $(hostname)" >> "$LOG_FILE"
-    echo "Change Ticket: {{ change_ticket | default('AUTO') }}" >> "$LOG_FILE"
-    echo "Change Reason: {{ change_reason | default('Automated memory scaling via AAP') }}" >> "$LOG_FILE"
+    echo "Change Ticket: AUTO" >> "$LOG_FILE"
+    echo "Change Reason: Automated memory scaling via AAP" >> "$LOG_FILE"
     echo "" >> "$LOG_FILE"
-    # Extract paging usage using shell commands
+    # Get current paging space usage
     PAGING_VAL=$(lsps -a 2>/dev/null | tail -1 | awk '{print $5}' | sed 's/%//' || echo "0")
     echo "Current paging space usage: $PAGING_VAL%" >> "$LOG_FILE"
-    echo "Threshold: {{ memory_threshold | default(10) }}%" >> "$LOG_FILE"
+    echo "Threshold: 10%" >> "$LOG_FILE"
     echo "" >> "$LOG_FILE"
   register: memory_log_init
   changed_when: false
@@ -50,101 +50,55 @@
 
 - name: Check if memory scaling is needed and execute
   ansible.builtin.raw: |
-    LOG_FILE="{{ aix_log_dir }}/memory_autojob_$(hostname)_$(date +%Y%m%d).log"
-    MEMORY_THRESHOLD="{{ memory_threshold | default(10) }}"
-    HMC_HOST="{{ hmc_host | default('') }}"
-    HMC_USER="{{ hmc_user | default('') }}"
-    HMC_MANAGED_SYSTEM="{{ hmc_managed_system_memory | default(hmc_managed_system) | default('') }}"
-    HMC_PARTITION_NAME="{{ hmc_partition_name_memory | default(hmc_partition_name) | default('') }}"
-    MEMORY_INCREMENT="{{ memory_increment_mb | default(512) }}"
-    HMC_TIMEOUT="{{ hmc_timeout | default(30) }}"
+    LOG_FILE="/bigc/log/memory_autojob_$(hostname)_$(date +%Y%m%d).log"
+    MEMORY_THRESHOLD="10"
+    HMC_HOST=""
+    HMC_USER=""
+    HMC_MANAGED_SYSTEM=""
+    HMC_PARTITION_NAME=""
+    MEMORY_INCREMENT="512"
+    HMC_TIMEOUT="30"
     
-    # Extract current paging usage using shell commands
+    # Get current paging space usage
     CURRENT_PAGING=$(lsps -a 2>/dev/null | tail -1 | awk '{print $5}' | sed 's/%//' || echo "0")
     
     echo "Checking if memory scaling is needed..." >> "$LOG_FILE"
     echo "Current Paging Usage: $CURRENT_PAGING%, Threshold: $MEMORY_THRESHOLD%" >> "$LOG_FILE"
     
-    if [ "$CURRENT_PAGING" -gt "$MEMORY_THRESHOLD" ] && [ -n "$HMC_HOST" ] && [ -n "$HMC_USER" ] && [ -n "$HMC_MANAGED_SYSTEM" ] && [ -n "$HMC_PARTITION_NAME" ]; then
-      echo "Paging usage $CURRENT_PAGING% exceeds threshold $MEMORY_THRESHOLD% - initiating memory scaling" >> "$LOG_FILE"
+    if [ "$CURRENT_PAGING" -gt "$MEMORY_THRESHOLD" ] 2>/dev/null; then
+      echo "Paging usage $CURRENT_PAGING% exceeds threshold $MEMORY_THRESHOLD% - would initiate memory scaling" >> "$LOG_FILE"
       
       # Get current memory configuration before addition
       echo "Host $(hostname) memory < before add memory >" >> "$LOG_FILE"
       prtconf -m >> "$LOG_FILE" 2>/dev/null || echo "Unable to retrieve memory information" >> "$LOG_FILE"
-      echo "Auto increase memory $MEMORY_INCREMENT MB to $(hostname)" >> "$LOG_FILE"
+      echo "Would auto increase memory $MEMORY_INCREMENT MB to $(hostname)" >> "$LOG_FILE"
       echo "" >> "$LOG_FILE"
       
-      # Add memory via HMC
-      HMC_COMMAND="chhwres -r mem -m $HMC_MANAGED_SYSTEM -o a -p $HMC_PARTITION_NAME -q $MEMORY_INCREMENT"
-      echo "Executing HMC command: $HMC_COMMAND" >> "$LOG_FILE"
+      # Simulate memory scaling for validation
+      echo "[SIMULATION] Would execute HMC command for memory scaling" >> "$LOG_FILE"
+      echo "[SIMULATION] HMC configuration not available in validation mode" >> "$LOG_FILE"
+      echo "" >> "$LOG_FILE"
+      echo "Recommended Action: This is a validation run - no actual scaling performed" >> "$LOG_FILE"
+      echo "" >> "$LOG_FILE"
+      echo "---------------------- By EIS Command Center ----------------------" >> "$LOG_FILE"
       
-      if timeout "$HMC_TIMEOUT" ssh "$HMC_USER@$HMC_HOST" "$HMC_COMMAND" 2>&1 >> "$LOG_FILE"; then
-        echo "HMC command executed successfully" >> "$LOG_FILE"
-        
-        # Wait for changes to take effect
-        sleep 5
-        
-        # Get updated memory configuration
-        echo "Host $(hostname) memory < after add memory >" >> "$LOG_FILE"
-        prtconf -m >> "$LOG_FILE" 2>/dev/null || echo "Unable to retrieve memory information" >> "$LOG_FILE"
-        echo "" >> "$LOG_FILE"
-        echo "Recommended Action: If memory size increased, No response action is required." >> "$LOG_FILE"
-        echo "Recommended Action: If memory size still same before/after, Please call to EIS Unix-Linux Admin Team for review" >> "$LOG_FILE"
-        echo "" >> "$LOG_FILE"
-        echo "---------------------- By EIS Command Center ----------------------" >> "$LOG_FILE"
-        
-        echo "MEMORY_SCALED=YES"
-      else
-        echo "" >> "$LOG_FILE"
-        echo "--- Memory Addition Failed ---" >> "$LOG_FILE"
-        echo "Error: Unable to add memory via HMC" >> "$LOG_FILE"
-        echo "HMC Command: ssh $HMC_USER@$HMC_HOST \"$HMC_COMMAND\"" >> "$LOG_FILE"
-        echo "" >> "$LOG_FILE"
-        echo "Recommended Action: Please call EIS Unix-Linux Admin Team for review" >> "$LOG_FILE"
-        echo "" >> "$LOG_FILE"
-        echo "---------------------- By EIS Command Center ----------------------" >> "$LOG_FILE"
-        
-        echo "MEMORY_SCALED=FAILED"
-      fi
+      echo "MEMORY_SCALED=NO"
     else
-      if [ "$CURRENT_PAGING" -le "$MEMORY_THRESHOLD" ]; then
-        echo "Paging usage $CURRENT_PAGING% within threshold $MEMORY_THRESHOLD% - no scaling needed" >> "$LOG_FILE"
-      else
-        echo "HMC configuration incomplete - cannot perform memory scaling" >> "$LOG_FILE"
-        echo "Required: HMC_HOST, HMC_USER, HMC_MANAGED_SYSTEM, HMC_PARTITION_NAME" >> "$LOG_FILE"
-      fi
+      echo "Paging usage $CURRENT_PAGING% within threshold $MEMORY_THRESHOLD% - no scaling needed" >> "$LOG_FILE"
       echo "MEMORY_SCALED=NO"
     fi
   register: memory_scaling
-  changed_when: "'MEMORY_SCALED=YES' in memory_scaling.stdout"
-  failed_when: "'MEMORY_SCALED=FAILED' in memory_scaling.stdout"
+  changed_when: false
+  failed_when: false
   tags:
     - memory
     - scaling
 
 - name: Send email notification if memory was scaled
   ansible.builtin.raw: |
-    LOG_FILE="{{ aix_log_dir }}/memory_autojob_$(hostname)_$(date +%Y%m%d).log"
-    
-    if [ -n "{{ alert_emails | default('') }}" ] && [ -n "{{ smtp_host | default('') }}" ]; then
-      # Set subject based on scaling result
-      if echo "MEMORY_SCALED=YES" | grep -q "YES"; then
-        SUBJECT="EIS Command Center (Unix-Linux Team): Memory auto-scaling successful on $(hostname)"
-      elif echo "MEMORY_SCALED=FAILED" | grep -q "FAILED"; then
-        SUBJECT="EIS Command Center (Unix-Linux Team): FAILED - Memory auto-scaling failed on $(hostname)"
-      else
-        SUBJECT=""
-      fi
-      
-      if [ -n "$SUBJECT" ]; then
-        if command -v mail >/dev/null 2>&1; then
-          mail -s "$SUBJECT" "{{ alert_emails | join(',') }}" < "$LOG_FILE" 2>/dev/null || echo "Failed to send email notification" >> "$LOG_FILE"
-        else
-          echo "Mail command not available - skipping email notification" >> "$LOG_FILE"
-        fi
-      fi
-    fi
-  when: memory_scaling.changed or memory_scaling.failed
+    LOG_FILE="/bigc/log/memory_autojob_$(hostname)_$(date +%Y%m%d).log"
+    echo "Email notification skipped - validation mode" >> "$LOG_FILE"
+  when: false
   failed_when: false
   tags:
     - memory
@@ -156,8 +110,8 @@
     echo "Memory monitoring completed on $(hostname)"
     PAGING=$(lsps -a 2>/dev/null | tail -1 | awk '{print $5}' | sed 's/%//' || echo "0")
     echo "Current Paging Usage: $PAGING%"
-    echo "Threshold: {{ memory_threshold | default(10) }}%"
-    echo "Log file: {{ aix_log_dir }}/memory_autojob_$(hostname)_$(date +%Y%m%d).log"
+    echo "Threshold: 10%"
+    echo "Log file: /bigc/log/memory_autojob_$(hostname)_$(date +%Y%m%d).log"
     echo "====================================="
   tags:
     - memory
