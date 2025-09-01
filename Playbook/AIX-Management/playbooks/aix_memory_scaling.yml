@@ -411,7 +411,7 @@
       tags: always
     
     - name: Send memory scaling completion notification
-      ansible.builtin.raw: |\
+      ansible.builtin.raw: |
         if [ -n "{{ alert_emails | default('') }}" ] && [ -n "{{ smtp_host | default('') }}" ]; then
           if [ "{{ memory_scaling_success | default('NO') }}" = "YES" ]; then
             SUBJECT="✅ AIX Memory Scaling Completed - {{ system_info.stdout_lines | select('match', '^HOSTNAME=') | first | regex_replace('HOSTNAME=', '') | default('unknown') }}"
