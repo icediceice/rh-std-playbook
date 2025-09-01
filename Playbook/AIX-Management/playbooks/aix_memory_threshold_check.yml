@@ -288,6 +288,31 @@
         aggregate: false
       tags: threshold_check
 
+    - name: Fail playbook if memory thresholds are breached (for workflow decision)
+      ansible.builtin.fail:
+        msg: |
+          🚨 MEMORY THRESHOLD BREACH DETECTED - SCALING REQUIRED 🚨
+          
+          Threshold Violations:
+          - Paging Space Threshold: {{ '❌ EXCEEDED' if memory_paging_exceeded == 'YES' else '✅ OK' }}
+          - Real Memory Threshold: {{ '❌ EXCEEDED' if memory_mem_exceeded == 'YES' else '✅ OK' }}
+          
+          Current Configuration:
+          - Current Memory: {{ memory_current_mb }}MB
+          - Recommended Memory: {{ memory_recommended_mb }}MB
+          - Scale Increment: {{ memory_scale_increment_mb }}MB
+          
+          This failure triggers the workflow to execute memory scaling.
+          Log File: {{ memory_log_file }}
+          Results File: {{ memory_results_file }}
+      when: 
+        - memory_scaling_needed is defined
+        - memory_scaling_needed == 'YES'
+        - fail_on_threshold_breach | default(true) | bool
+      tags: 
+        - threshold_check
+        - workflow_decision
+
   post_tasks:
     - name: Display memory threshold check summary
       ansible.builtin.debug:

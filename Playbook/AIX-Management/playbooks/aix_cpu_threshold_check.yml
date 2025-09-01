@@ -294,6 +294,31 @@
         aggregate: false
       tags: threshold_check
 
+    - name: Fail playbook if CPU thresholds are breached (for workflow decision)
+      ansible.builtin.fail:
+        msg: |
+          🚨 CPU THRESHOLD BREACH DETECTED - SCALING REQUIRED 🚨
+          
+          Threshold Violations:
+          - Load Threshold: {{ '❌ EXCEEDED' if cpu_load_exceeded == 'YES' else '✅ OK' }}
+          - Utilization Threshold: {{ '❌ EXCEEDED' if cpu_util_exceeded == 'YES' else '✅ OK' }}
+          
+          Current Configuration:
+          - Virtual CPUs: {{ cpu_current_count }}
+          - Recommended CPUs: {{ cpu_recommended_count }}
+          - Scale Increment: {{ cpu_scale_increment }}
+          
+          This failure triggers the workflow to execute CPU scaling.
+          Log File: {{ cpu_log_file }}
+          Results File: {{ cpu_results_file }}
+      when: 
+        - cpu_scaling_needed is defined
+        - cpu_scaling_needed == 'YES'
+        - fail_on_threshold_breach | default(true) | bool
+      tags: 
+        - threshold_check
+        - workflow_decision
+
   post_tasks:
     - name: Display CPU threshold check summary
       ansible.builtin.debug:

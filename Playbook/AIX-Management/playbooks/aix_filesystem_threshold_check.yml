@@ -228,6 +228,30 @@
         aggregate: false
       tags: threshold_check
 
+    - name: Fail playbook if filesystem thresholds are breached (for workflow decision)
+      ansible.builtin.fail:
+        msg: |
+          🚨 FILESYSTEM THRESHOLD BREACH DETECTED - EXPANSION REQUIRED 🚨
+          
+          Threshold Violations Found:
+          - Total Filesystems Checked: {{ total_checked }}
+          - Filesystems Exceeding Threshold: {{ exceeding_threshold }}
+          - Expansion Needed: {{ expansion_needed }}
+          
+          Filesystems Requiring Expansion:
+          {{ filesystems_to_expand }}
+          
+          This failure triggers the workflow to execute filesystem expansion.
+          Log File: {{ log_file }}
+          Results File: {{ results_file }}
+      when: 
+        - expansion_needed is defined
+        - expansion_needed == 'YES'
+        - fail_on_threshold_breach | default(true) | bool
+      tags: 
+        - threshold_check
+        - workflow_decision
+
   post_tasks:
     - name: Display threshold check summary
       ansible.builtin.debug:
