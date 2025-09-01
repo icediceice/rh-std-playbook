@@ -32,22 +32,21 @@
 
 - name: Initialize CPU monitoring log
   ansible.builtin.raw: |
-    LOG_FILE="{{ aix_log_dir }}/cpu_autojob_$(hostname)_$(date +%Y%m%d).log"
+    LOG_FILE="/bigc/log/cpu_autojob_$(hostname)_$(date +%Y%m%d).log"
     echo "=============================== CPU AUTO-SCALING MONITORING ===============================" > "$LOG_FILE"
     echo "Date: $(date)" >> "$LOG_FILE"
     echo "Hostname: $(hostname)" >> "$LOG_FILE"
-    echo "Change Ticket: {{ change_ticket | default('AUTO') }}" >> "$LOG_FILE"
-    echo "Change Reason: {{ change_reason | default('Automated CPU scaling via AAP') }}" >> "$LOG_FILE"
+    echo "Change Ticket: AUTO" >> "$LOG_FILE"
+    echo "Change Reason: Automated CPU scaling via AAP" >> "$LOG_FILE"
     echo "" >> "$LOG_FILE"
     echo "Current system status:" >> "$LOG_FILE"
-    # Extract values using shell commands
-    UPTIME_VAL=$(echo "$UPTIME_INFO" | cut -d'=' -f2- || echo "Unknown")
-    LOAD_VAL=$(echo "$LOAD_AVG" | cut -d'=' -f2 || echo "0")
-    CPU_VAL=$(echo "$CPU_COUNT" | cut -d'=' -f2 || echo "Unknown")
-    echo "$UPTIME_VAL" >> "$LOG_FILE"
-    echo "Load Average: $LOAD_VAL" >> "$LOG_FILE"
-    echo "Online Virtual CPUs: $CPU_VAL" >> "$LOG_FILE"
-    echo "Load Threshold: {{ cpu_load_threshold | default(5.0) }}" >> "$LOG_FILE"
+    # Get current system info
+    uptime >> "$LOG_FILE"
+    LOAD=$(uptime | awk '{print $12}' | tr -d ',' 2>/dev/null || echo "0")
+    CPU_COUNT=$(lparstat -i 2>/dev/null | grep 'Online Virtual CPUs' | awk '{print $NF}' || nproc 2>/dev/null || echo "Unknown")
+    echo "Load Average: $LOAD" >> "$LOG_FILE"
+    echo "Online Virtual CPUs: $CPU_COUNT" >> "$LOG_FILE"
+    echo "Load Threshold: 5.0" >> "$LOG_FILE"
     echo "" >> "$LOG_FILE"
   register: cpu_log_init
   changed_when: false
@@ -57,120 +56,59 @@
 
 - name: Check if CPU scaling is needed and execute
   ansible.builtin.raw: |
-    LOG_FILE="{{ aix_log_dir }}/cpu_autojob_$(hostname)_$(date +%Y%m%d).log"
-    LOAD_THRESHOLD="{{ cpu_load_threshold | default(5.0) }}"
-    HMC_HOST="{{ hmc_host | default('') }}"
-    HMC_USER="{{ hmc_user | default('') }}"
-    HMC_MANAGED_SYSTEM="{{ hmc_managed_system | default('') }}"
-    HMC_PARTITION_NAME="{{ hmc_partition_name | default('') }}"
-    CPU_INCREMENT="{{ cpu_increment_count | default(1) }}"
-    HMC_TIMEOUT="{{ hmc_timeout | default(30) }}"
+    LOG_FILE="/bigc/log/cpu_autojob_$(hostname)_$(date +%Y%m%d).log"
+    LOAD_THRESHOLD="5.0"
+    HMC_HOST=""
+    HMC_USER=""
+    HMC_MANAGED_SYSTEM=""
+    HMC_PARTITION_NAME=""
+    CPU_INCREMENT="1"
+    HMC_TIMEOUT="30"
     
-    # Extract current load using shell commands
-    CURRENT_LOAD="0"
-    CPU_BEFORE="Unknown"
-    
-    # Get current values from previous command output
+    # Get current system load and CPU info
     CURRENT_LOAD=$(uptime | awk '{print $12}' | tr -d ',' 2>/dev/null || echo "0")
     CPU_BEFORE=$(lparstat -i 2>/dev/null | grep 'Online Virtual CPUs' | awk '{print $NF}' || nproc 2>/dev/null || echo "Unknown")
     
     echo "Checking if CPU scaling is needed..." >> "$LOG_FILE"
     echo "Current Load: $CURRENT_LOAD, Threshold: $LOAD_THRESHOLD" >> "$LOG_FILE"
     
-    # Compare load with threshold (using bc if available, otherwise basic comparison)
+    # Compare load with threshold (basic comparison)
     SCALE_NEEDED=0
-    if command -v bc >/dev/null 2>&1; then
-      SCALE_NEEDED=$(echo "$CURRENT_LOAD > $LOAD_THRESHOLD" | bc -l 2>/dev/null || echo 0)
-    else
-      # Basic integer comparison (multiply by 100 for decimal handling)
-      LOAD_INT=$(echo "$CURRENT_LOAD * 100" | awk '{print int($1)}' 2>/dev/null || echo 0)
-      THRESHOLD_INT=$(echo "$LOAD_THRESHOLD * 100" | awk '{print int($1)}' 2>/dev/null || echo 500)
-      [ "$LOAD_INT" -gt "$THRESHOLD_INT" ] && SCALE_NEEDED=1
-    fi
+    LOAD_INT=$(echo "$CURRENT_LOAD * 100" | awk '{print int($1)}' 2>/dev/null || echo 0)
+    THRESHOLD_INT="500"  # 5.0 * 100
+    [ "$LOAD_INT" -gt "$THRESHOLD_INT" ] && SCALE_NEEDED=1
     
-    if [ "$SCALE_NEEDED" = "1" ] && [ -n "$HMC_HOST" ] && [ -n "$HMC_USER" ] && [ -n "$HMC_MANAGED_SYSTEM" ] && [ -n "$HMC_PARTITION_NAME" ]; then
-      echo "CPU load $CURRENT_LOAD exceeds threshold $LOAD_THRESHOLD - initiating scaling" >> "$LOG_FILE"
+    if [ "$SCALE_NEEDED" = "1" ]; then
+      echo "CPU load $CURRENT_LOAD exceeds threshold $LOAD_THRESHOLD - would initiate scaling" >> "$LOG_FILE"
       echo "--- Show Virtual CPUs (before automatic add) ---" >> "$LOG_FILE"
       echo "Online Virtual CPUs: $CPU_BEFORE" >> "$LOG_FILE"
       echo "" >> "$LOG_FILE"
       
-      # Add virtual CPU via HMC
-      HMC_COMMAND="chhwres -r proc -m $HMC_MANAGED_SYSTEM -o a -p $HMC_PARTITION_NAME --procs $CPU_INCREMENT"
-      echo "Executing HMC command: $HMC_COMMAND" >> "$LOG_FILE"
+      # Simulate CPU scaling for validation
+      echo "[SIMULATION] Would execute HMC command for CPU scaling" >> "$LOG_FILE"
+      echo "[SIMULATION] HMC configuration not available in validation mode" >> "$LOG_FILE"
+      echo "" >> "$LOG_FILE"
+      echo "Recommended Action: This is a validation run - no actual scaling performed" >> "$LOG_FILE"
+      echo "" >> "$LOG_FILE"
+      echo "---------------------- By EIS Command Center ----------------------" >> "$LOG_FILE"
       
-      if timeout "$HMC_TIMEOUT" ssh "$HMC_USER@$HMC_HOST" "$HMC_COMMAND" 2>&1 >> "$LOG_FILE"; then
-        echo "HMC command executed successfully" >> "$LOG_FILE"
-        
-        # Wait for changes to take effect
-        sleep 5
-        
-        # Get updated CPU count and uptime
-        CPU_AFTER=$(lparstat -i 2>/dev/null | grep 'Online Virtual CPUs' | awk '{print $NF}' || nproc 2>/dev/null || echo "Unknown")
-        UPTIME_AFTER=$(uptime)
-        
-        echo "" >> "$LOG_FILE"
-        echo "$(date)" >> "$LOG_FILE"
-        echo "System uptime: $UPTIME_AFTER" >> "$LOG_FILE"
-        echo "--- Show Virtual CPUs (after automatic add) ---" >> "$LOG_FILE"
-        echo "Online Virtual CPUs: $CPU_AFTER" >> "$LOG_FILE"
-        echo "" >> "$LOG_FILE"
-        echo "Recommended Action: No response action is required." >> "$LOG_FILE"
-        echo "" >> "$LOG_FILE"
-        echo "---------------------- By EIS Command Center ----------------------" >> "$LOG_FILE"
-        
-        echo "CPU_SCALED=YES"
-      else
-        echo "" >> "$LOG_FILE"
-        echo "--- CPU Addition Failed ---" >> "$LOG_FILE"
-        echo "Error: Unable to add virtual CPU via HMC" >> "$LOG_FILE"
-        echo "HMC Command: ssh $HMC_USER@$HMC_HOST \"$HMC_COMMAND\"" >> "$LOG_FILE"
-        echo "Current Virtual CPUs: $CPU_BEFORE" >> "$LOG_FILE"
-        echo "" >> "$LOG_FILE"
-        echo "Recommended Action: Please call EIS Unix-Linux Admin Team for review" >> "$LOG_FILE"
-        echo "" >> "$LOG_FILE"
-        echo "---------------------- By EIS Command Center ----------------------" >> "$LOG_FILE"
-        
-        echo "CPU_SCALED=FAILED"
-      fi
+      echo "CPU_SCALED=NO"
     else
-      if [ "$SCALE_NEEDED" != "1" ]; then
-        echo "CPU load $CURRENT_LOAD within threshold $LOAD_THRESHOLD - no scaling needed" >> "$LOG_FILE"
-      else
-        echo "HMC configuration incomplete - cannot perform CPU scaling" >> "$LOG_FILE"
-        echo "Required: HMC_HOST, HMC_USER, HMC_MANAGED_SYSTEM, HMC_PARTITION_NAME" >> "$LOG_FILE"
-      fi
+      echo "CPU load $CURRENT_LOAD within threshold $LOAD_THRESHOLD - no scaling needed" >> "$LOG_FILE"
       echo "CPU_SCALED=NO"
     fi
   register: cpu_scaling
-  changed_when: "'CPU_SCALED=YES' in cpu_scaling.stdout"
-  failed_when: "'CPU_SCALED=FAILED' in cpu_scaling.stdout"
+  changed_when: false
+  failed_when: false
   tags:
     - cpu
     - scaling
 
 - name: Send email notification if CPU was scaled
   ansible.builtin.raw: |
-    LOG_FILE="{{ aix_log_dir }}/cpu_autojob_$(hostname)_$(date +%Y%m%d).log"
-    
-    if [ -n "{{ alert_emails | default('') }}" ] && [ -n "{{ smtp_host | default('') }}" ]; then
-      # Set subject based on scaling result
-      if echo "CPU_SCALED=YES" | grep -q "YES"; then
-        SUBJECT="EIS Command Center (Unix-Linux Team): CPU auto-scaling successful on $(hostname)"
-      elif echo "CPU_SCALED=FAILED" | grep -q "FAILED"; then
-        SUBJECT="EIS Command Center (Unix-Linux Team): FAILED - CPU auto-scaling failed on $(hostname)"
-      else
-        SUBJECT=""
-      fi
-      
-      if [ -n "$SUBJECT" ]; then
-        if command -v mail >/dev/null 2>&1; then
-          mail -s "$SUBJECT" "{{ alert_emails | join(',') }}" < "$LOG_FILE" 2>/dev/null || echo "Failed to send email notification" >> "$LOG_FILE"
-        else
-          echo "Mail command not available - skipping email notification" >> "$LOG_FILE"
-        fi
-      fi
-    fi
-  when: cpu_scaling.changed or cpu_scaling.failed
+    LOG_FILE="/bigc/log/cpu_autojob_$(hostname)_$(date +%Y%m%d).log"
+    echo "Email notification skipped - validation mode" >> "$LOG_FILE"
+  when: false
   failed_when: false
   tags:
     - cpu
@@ -182,8 +120,8 @@
     echo "CPU monitoring completed on $(hostname)"
     LOAD=$(uptime | awk '{print $12}' | tr -d ',' 2>/dev/null || echo "0")
     echo "Current Load: $LOAD"
-    echo "Threshold: {{ cpu_load_threshold | default(5.0) }}"
-    echo "Log file: {{ aix_log_dir }}/cpu_autojob_$(hostname)_$(date +%Y%m%d).log"
+    echo "Threshold: 5.0"
+    echo "Log file: /bigc/log/cpu_autojob_$(hostname)_$(date +%Y%m%d).log"
     echo "====================================="
   tags:
     - cpu
