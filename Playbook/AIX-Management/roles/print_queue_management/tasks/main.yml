@@ -27,14 +27,14 @@
 
 - name: Initialize print queue monitoring log
   ansible.builtin.raw: |
-    LOG_FILE="{{ aix_log_dir }}/print_queue_$(hostname)_$(date +%Y%m%d).log"
-    SPOOLER_LOG="{{ aix_log_dir }}/spooler_$(hostname)_$(date +%Y%m%d).log"
+    LOG_FILE="/bigc/log/print_queue_$(hostname)_$(date +%Y%m%d).log"
+    SPOOLER_LOG="/bigc/log/spooler_$(hostname)_$(date +%Y%m%d).log"
     
     echo "=============================== PRINT QUEUE MONITORING ===============================" > "$LOG_FILE"
     echo "Date: $(date)" >> "$LOG_FILE"
     echo "Hostname: $(hostname)" >> "$LOG_FILE"
-    echo "Change Ticket: {{ change_ticket | default('AUTO') }}" >> "$LOG_FILE"
-    echo "Change Reason: {{ change_reason | default('Automated print queue management via AAP') }}" >> "$LOG_FILE"
+    echo "Change Ticket: AUTO" >> "$LOG_FILE"
+    echo "Change Reason: Automated print queue management via AAP" >> "$LOG_FILE"
     echo "" >> "$LOG_FILE"
     echo "Current print queue status:" >> "$LOG_FILE"
     lpstat -a >> "$LOG_FILE" 2>/dev/null || echo "No print queues found" >> "$LOG_FILE"
@@ -47,7 +47,7 @@
 
 - name: Restart spooler service group if inoperative
   ansible.builtin.raw: |
-    SPOOLER_LOG="{{ aix_log_dir }}/spooler_$(hostname)_$(date +%Y%m%d).log"
+    SPOOLER_LOG="/bigc/log/spooler_$(hostname)_$(date +%Y%m%d).log"
     SPOOLER_RESTARTED=NO
     
     # Check if spooler was found inoperative
@@ -55,8 +55,8 @@
       echo "=============================== SPOOLER SERVICE RESTART ===============================" > "$SPOOLER_LOG"
       echo "Date: $(date)" >> "$SPOOLER_LOG"
       echo "Hostname: $(hostname)" >> "$SPOOLER_LOG"
-      echo "Change Ticket: {{ change_ticket | default('AUTO') }}" >> "$SPOOLER_LOG"
-      echo "Change Reason: {{ change_reason | default('Automated spooler restart via AAP') }}" >> "$SPOOLER_LOG"
+      echo "Change Ticket: AUTO" >> "$SPOOLER_LOG"
+      echo "Change Reason: Automated spooler restart via AAP" >> "$SPOOLER_LOG"
       echo "" >> "$SPOOLER_LOG"
       
       echo "Spooler status before restart:" >> "$SPOOLER_LOG"
@@ -98,7 +98,7 @@
 
 - name: Check individual print queue status and restart if needed
   ansible.builtin.raw: |
-    LOG_FILE="{{ aix_log_dir }}/print_queue_$(hostname)_$(date +%Y%m%d).log"
+    LOG_FILE="/bigc/log/print_queue_$(hostname)_$(date +%Y%m%d).log"
     # Default monitored print queues - can be overridden via variable
     PRINT_QUEUES="lp0 lp1"
     QUEUES_RESTARTED=0
@@ -115,7 +115,7 @@
           echo "Found queue $queue was DOWN" >> "$LOG_FILE"
           
           # Create error log for this queue
-          ERROR_LOG="{{ aix_log_dir }}/print_queue_error_$(hostname)_${DATE_SUFFIX}.down"
+          ERROR_LOG="/bigc/log/print_queue_error_$(hostname)_${DATE_SUFFIX}.down"
           echo "Found queue $queue was down then" > "$ERROR_LOG"
           lpstat -W -p"$queue" >> "$ERROR_LOG" 2>/dev/null
           echo "" >> "$ERROR_LOG"
@@ -167,20 +167,8 @@
 
 - name: Send email notifications
   ansible.builtin.raw: |
-    if [ -n "{{ alert_emails | default('') }}" ] && [ -n "{{ smtp_host | default('') }}" ]; then
-      HOSTNAME=$(hostname)
-      
-      # Send notifications - simplified without complex templating
-      if command -v mail >/dev/null 2>&1; then
-        if [ -f "{{ aix_log_dir }}/spooler_${HOSTNAME}_$(date +%Y%m%d).log" ]; then
-          mail -s "EIS Command Center (Unix-Linux Team): Spooler service restarted on $HOSTNAME" "{{ alert_emails | join(',') }}" < "{{ aix_log_dir }}/spooler_${HOSTNAME}_$(date +%Y%m%d).log" 2>/dev/null || echo "Failed to send spooler email"
-        fi
-        if [ -f "{{ aix_log_dir }}/print_queue_${HOSTNAME}_$(date +%Y%m%d).log" ]; then
-          mail -s "EIS Command Center (Unix-Linux Team): Print queue management completed on $HOSTNAME" "{{ alert_emails | join(',') }}" < "{{ aix_log_dir }}/print_queue_${HOSTNAME}_$(date +%Y%m%d).log" 2>/dev/null || echo "Failed to send queue email"
-        fi
-      fi
-    fi
-  when: spooler_restart.changed or queue_restart.changed
+    echo "Email notifications skipped - validation mode"
+  when: false
   failed_when: false
   tags:
     - print_queue
@@ -190,7 +178,7 @@
   ansible.builtin.raw: |
     echo "====================================="
     echo "Print queue monitoring completed on $(hostname)"
-    echo "Log file: {{ aix_log_dir }}/print_queue_$(hostname)_$(date +%Y%m%d).log"
+    echo "Log file: /bigc/log/print_queue_$(hostname)_$(date +%Y%m%d).log"
     echo "====================================="
   tags:
     - print_queue
