@@ -22,13 +22,13 @@
         phase1_names: >-
           {{ vpn_phase1.meta.results | selectattr('name', 'search', vpn_name | default('vpn1')) | map(attribute='name') | list | unique }}
         phase2_names: >-
-          {% set phase2_list = [] %}
-          {% for phase1 in vpn_phase1.meta.results | selectattr('name', 'search', vpn_name | default('vpn1')) %}
-            {% for proxy in phase1.proxyid | default([]) %}
-              {% set _ = phase2_list.append(proxy.p2name) %}
-            {% endfor %}
-          {% endfor %}
-          {{ phase2_list | unique }}
+          {%- set phase2_list = [] -%}
+          {%- for phase1 in vpn_phase1.meta.results | selectattr('name', 'search', vpn_name | default('vpn1')) -%}
+            {%- for proxy in phase1.proxyid | default([]) -%}
+              {%- set _ = phase2_list.append(proxy.p2name) -%}
+            {%- endfor -%}
+          {%- endfor -%}
+          {{ phase2_list | unique | list }}
 
     - name: Clear IKE gateway for each VPN tunnel (keeps config)
       fortinet.fortios.fortios_monitor:
@@ -67,10 +67,10 @@
         params:
           p1name: "{{ vpn_name | default('vpn1') }}"
           p2name: "{{ item }}"
-      loop: "{{ phase2_names }}"
+      loop: "{{ phase2_names | default([]) }}"
       register: force_phase2_result
       ignore_errors: yes
-      when: force_tunnel_online | default(true) | bool and phase2_names | length > 0
+      when: force_tunnel_online | default(true) | bool and phase2_names | default([]) | length > 0
       retries: "{{ force_tunnel_max_retries | default(3) | int }}"
       delay: 3
 
@@ -98,11 +98,11 @@
     - name: Debug force tunnel results
       debug:
         msg:
-          - "Force tunnel feature: {{ 'ENABLED' if force_tunnel_online | bool else 'DISABLED' }}"
-          - "Force Phase 1 result: {{ 'SUCCESS' if force_phase1_result is succeeded else 'FAILED' if force_tunnel_online | bool else 'SKIPPED' }}"
-          - "Force Phase 2 result: {{ 'SUCCESS' if force_phase2_result is succeeded else 'FAILED' if (force_tunnel_online | bool and phase2_names | length > 0) else 'SKIPPED' }}"
-          - "Overall tunnel result: {{ 'SUCCESS' if vpn_currently_up | default(false) else 'FAILED' if force_tunnel_online | bool else 'SKIPPED' }}"
-          - "Tunnel Status: {{ vpn_status_after_force.meta.results | selectattr('name', 'search', vpn_name | default('vpn1')) | map(attribute='proxyid') | map('first') | map(attribute='status') | first | default('unknown') | upper if force_tunnel_online | bool else 'NOT_CHECKED' }}"
+          - "Force tunnel feature: {{ 'ENABLED' if force_tunnel_online | default(true) | bool else 'DISABLED' }}"
+          - "Force Phase 1 result: {{ 'SUCCESS' if force_phase1_result is defined and force_phase1_result is succeeded else 'FAILED' if force_tunnel_online | default(true) | bool else 'SKIPPED' }}"
+          - "Force Phase 2 result: {{ 'SUCCESS' if force_phase2_result is defined and force_phase2_result is succeeded else 'FAILED' if (force_tunnel_online | default(true) | bool and phase2_names | default([]) | length > 0) else 'SKIPPED' }}"
+          - "Overall tunnel result: {{ 'SUCCESS' if vpn_currently_up | default(false) else 'FAILED' if force_tunnel_online | default(true) | bool else 'SKIPPED' }}"
+          - "Tunnel Status: {{ vpn_status_after_force.meta.results | selectattr('name', 'search', vpn_name | default('vpn1')) | map(attribute='proxyid') | map('first') | map(attribute='status') | first | default('unknown') | upper if force_tunnel_online | default(true) | bool else 'NOT_CHECKED' }}"
 
     - name: Final tunnel status check
       fortinet.fortios.fortios_monitor_fact:
