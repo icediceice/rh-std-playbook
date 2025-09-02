@@ -1,0 +1,465 @@
+---
+# AIX Memory Scaling Playbook
+# Scales memory resources based on threshold check results from workflow
+# Compatible with AAP 2.5 workflow orchestration and HMC integration
+# Triggered when memory/paging thresholds are exceeded
+
+- name: AIX Memory Scaling
+  hosts: "{{ target_hosts | default('aix') }}"
+  gather_facts: false
+  become: true
+  
+  vars:
+    # Playbook identification for AAP
+    playbook_name: "AIX Memory Scaling"
+    playbook_version: "3.0"
+    
+    # AAP Job Information (automatically injected by AAP)
+    aap_job_template: "{{ tower_job_template_name | default('N/A') }}"
+    aap_job_id: "{{ tower_job_id | default('N/A') }}"
+    aap_user: "{{ tower_user_name | default('N/A') }}"
+    aap_inventory: "{{ tower_inventory_name | default('N/A') }}"
+    
+    # Change tracking for AAP (avoid recursive definition)
+    memory_scaling_reason: "{{ change_reason | default('Automated memory scaling based on threshold alert') }}"
+    memory_scaling_ticket: "{{ change_ticket | default('') }}"
+    
+    # Memory scaling configuration - can be from workflow variables or survey
+    current_memory_mb: "{{ memory_current_mb | default(0) }}"
+    recommended_memory_mb: "{{ memory_recommended_mb | default(0) }}"
+    memory_scale_increment_mb: "{{ memory_scale_increment_mb | default(512) }}"
+    scaling_mode: "{{ memory_scaling_mode | default('auto') }}"  # auto, manual, simulation
+    max_memory_limit_gb: "{{ max_memory_gb | default(64) }}"  # Safety limit in GB
+    
+    # HMC Configuration (required for memory scaling)
+    hmc_host: "{{ hmc_server | default(memory_hmc_host) | default('') }}"
+    hmc_user: "{{ hmc_username | default('hscroot') }}"
+    hmc_password: "{{ hmc_user_password | default('') }}"
+    hmc_ssh_key: "{{ hmc_ssh_key_path | default('') }}"
+    
+    # LPAR Configuration
+    lpar_name: "{{ target_lpar_name | default(memory_lpar_name) | default('') }}"
+    managed_system: "{{ hmc_managed_system | default('') }}"
+    
+    # Directory paths
+    aix_log_dir: "/bigc/log"
+    
+  pre_tasks:
+    - name: Gather minimal system facts
+      ansible.builtin.raw: |
+        echo "HOSTNAME=$(hostname)"
+        echo "OS=$(uname -s)"
+        echo "DATE=$(date)"
+      register: system_info
+      changed_when: false
+      tags: always
+    
+    - name: Display memory scaling information
+      ansible.builtin.debug:
+        msg: |
+          =====================================
+          AIX Memory Scaling
+          =====================================
+          Version: {{ playbook_version }}
+          Target Hosts: {{ target_hosts | default('aix') }}
+          AAP Job Template: {{ aap_job_template }}
+          AAP Job ID: {{ aap_job_id }}
+          AAP User: {{ aap_user }}
+          Change Reason: {{ memory_scaling_reason }}
+          Change Ticket: {{ memory_scaling_ticket }}
+          Scaling Mode: {{ scaling_mode }}
+          Current Memory: {{ current_memory_mb }}MB
+          Recommended Memory: {{ recommended_memory_mb }}MB
+          Scale Increment: {{ memory_scale_increment_mb }}MB
+          Max Memory Limit: {{ max_memory_limit_gb }}GB
+          HMC Host: {{ hmc_host | default('Not configured') }}
+          LPAR Name: {{ lpar_name | default('Not configured') }}
+          =====================================
+      tags: always
+    
+    - name: Validate target hosts
+      ansible.builtin.fail:
+        msg: "No valid AIX hosts found in inventory"
+      when: "'OS=AIX' not in system_info.stdout"
+      tags: always
+    
+    - name: Validate memory scaling parameters
+      ansible.builtin.fail:
+        msg: "Invalid memory scaling parameters. Current: {{ current_memory_mb }}MB, Recommended: {{ recommended_memory_mb }}MB"
+      when: 
+        - current_memory_mb | int == 0 or recommended_memory_mb | int == 0
+        - scaling_mode != 'simulation'
+      tags: always
+    
+    - name: Validate HMC configuration for non-simulation mode
+      ansible.builtin.fail:
+        msg: "HMC configuration incomplete. Required: hmc_host, lpar_name, managed_system"
+      when: 
+        - scaling_mode != 'simulation'
+        - (hmc_host == '' or lpar_name == '' or managed_system == '')
+      tags: always
+    
+    - name: Ensure log directory exists
+      ansible.builtin.raw: |
+        [ -d "{{ aix_log_dir }}" ] || mkdir -p "{{ aix_log_dir }}"
+        chmod 755 "{{ aix_log_dir }}"
+      changed_when: false
+      tags: always
+
+  tasks:
+    - name: Pre-scaling validation and memory scaling execution
+      ansible.builtin.raw: |
+        HOSTNAME=$(hostname)
+        LOG_FILE="{{ aix_log_dir }}/memory_scaling_${HOSTNAME}_$(date +%Y%m%d_%H%M%S).log"
+        
+        echo "=============================== MEMORY SCALING ===============================" > "$LOG_FILE"
+        echo "Date: $(date)" >> "$LOG_FILE"
+        echo "Hostname: $HOSTNAME" >> "$LOG_FILE"
+        echo "AAP Job ID: {{ aap_job_id }}" >> "$LOG_FILE"
+        echo "Change Ticket: {{ memory_scaling_ticket }}" >> "$LOG_FILE"
+        echo "Scaling Mode: {{ scaling_mode }}" >> "$LOG_FILE"
+        echo "Current Memory: {{ current_memory_mb }}MB" >> "$LOG_FILE"
+        echo "Recommended Memory: {{ recommended_memory_mb }}MB" >> "$LOG_FILE"
+        echo "Scale Increment: {{ memory_scale_increment_mb }}MB" >> "$LOG_FILE"
+        echo "HMC Host: {{ hmc_host }}" >> "$LOG_FILE"
+        echo "LPAR Name: {{ lpar_name }}" >> "$LOG_FILE"
+        echo "Managed System: {{ managed_system }}" >> "$LOG_FILE"
+        echo "" >> "$LOG_FILE"
+        
+        # Initialize results
+        SCALING_SUCCESS=YES
+        NEW_MEMORY_MB=0
+        SCALING_DETAILS=""
+        
+        # Validate current LPAR memory configuration
+        echo "Validating current LPAR memory configuration..." >> "$LOG_FILE"
+        
+        # Check current memory using multiple methods
+        ACTUAL_CURRENT_MEMORY=0
+        
+        # Method 1: prtconf
+        if command -v prtconf >/dev/null 2>&1; then
+          PRTCONF_MEMORY=$(prtconf | grep "Memory Size" | awk '{print $3}' 2>/dev/null)
+          if [ -n "$PRTCONF_MEMORY" ]; then
+            echo "Memory from prtconf: ${PRTCONF_MEMORY}MB" >> "$LOG_FILE"
+            ACTUAL_CURRENT_MEMORY=$PRTCONF_MEMORY
+          fi
+        fi
+        
+        # Method 2: lparstat
+        if command -v lparstat >/dev/null 2>&1; then
+          LPAR_MEMORY_INFO=$(lparstat -i | grep -i memory 2>/dev/null)
+          echo "LPAR memory information:" >> "$LOG_FILE"
+          echo "$LPAR_MEMORY_INFO" >> "$LOG_FILE"
+          
+          # Extract online memory if available
+          ONLINE_MEMORY=$(echo "$LPAR_MEMORY_INFO" | grep -i "online memory" | awk -F: '{print $2}' | tr -d ' ' | sed 's/MB//' 2>/dev/null)
+          if [ -n "$ONLINE_MEMORY" ]; then
+            echo "Online memory from lparstat: ${ONLINE_MEMORY}MB" >> "$LOG_FILE"
+            if [ "$ACTUAL_CURRENT_MEMORY" -eq 0 ]; then
+              ACTUAL_CURRENT_MEMORY=$ONLINE_MEMORY
+            fi
+          fi
+        fi
+        
+        # Method 3: svmon for verification
+        if command -v svmon >/dev/null 2>&1; then
+          SVMON_TOTAL=$(svmon -G | awk '/memory/ {print $2}' | head -1 2>/dev/null)
+          if [ -n "$SVMON_TOTAL" ]; then
+            # Convert from 4KB pages to MB
+            SVMON_MEMORY_MB=$((SVMON_TOTAL / 256))
+            echo "Memory from svmon: ${SVMON_MEMORY_MB}MB" >> "$LOG_FILE"
+          fi
+        fi
+        
+        # Use workflow provided value if detection failed
+        if [ "$ACTUAL_CURRENT_MEMORY" -eq 0 ]; then
+          echo "⚠️  WARNING: Could not detect current memory, using workflow value: {{ current_memory_mb }}MB" >> "$LOG_FILE"
+          ACTUAL_CURRENT_MEMORY={{ current_memory_mb }}
+        fi
+        
+        # Verify against workflow provided values
+        if [ "$ACTUAL_CURRENT_MEMORY" != "{{ current_memory_mb }}" ]; then
+          echo "⚠️  WARNING: Current memory mismatch - System reports ${ACTUAL_CURRENT_MEMORY}MB, workflow reports {{ current_memory_mb }}MB" >> "$LOG_FILE"
+          echo "Using system reported value: ${ACTUAL_CURRENT_MEMORY}MB" >> "$LOG_FILE"
+        fi
+        
+        # Calculate target memory
+        TARGET_MEMORY_MB={{ recommended_memory_mb }}
+        
+        # Safety checks
+        echo "" >> "$LOG_FILE"
+        echo "Performing safety checks..." >> "$LOG_FILE"
+        
+        MAX_MEMORY_MB=$(({{ max_memory_limit_gb }} * 1024))
+        if [ "$TARGET_MEMORY_MB" -gt "$MAX_MEMORY_MB" ] 2>/dev/null; then
+          echo "⚠️  WARNING: Target memory (${TARGET_MEMORY_MB}MB) exceeds safety limit (${MAX_MEMORY_MB}MB)" >> "$LOG_FILE"
+          echo "Limiting target to ${MAX_MEMORY_MB}MB" >> "$LOG_FILE"
+          TARGET_MEMORY_MB=$MAX_MEMORY_MB
+        fi
+        
+        if [ "$TARGET_MEMORY_MB" -le "$ACTUAL_CURRENT_MEMORY" ] 2>/dev/null; then
+          echo "ℹ️  INFO: Target memory (${TARGET_MEMORY_MB}MB) is not greater than current (${ACTUAL_CURRENT_MEMORY}MB)" >> "$LOG_FILE"
+          echo "No scaling needed" >> "$LOG_FILE"
+          NEW_MEMORY_MB=$ACTUAL_CURRENT_MEMORY
+        else
+          echo "✅ Memory scaling validated - will scale from ${ACTUAL_CURRENT_MEMORY}MB to ${TARGET_MEMORY_MB}MB" >> "$LOG_FILE"
+          
+          # Perform memory scaling based on mode
+          echo "" >> "$LOG_FILE"
+          if [ "{{ scaling_mode }}" = "simulation" ]; then
+            echo "🔍 SIMULATION MODE: Would scale memory from ${ACTUAL_CURRENT_MEMORY}MB to ${TARGET_MEMORY_MB}MB" >> "$LOG_FILE"
+            echo "HMC command that would be executed:" >> "$LOG_FILE"
+            echo "  ssh {{ hmc_user }}@{{ hmc_host }} 'chhwres -r mem -m {{ managed_system }} -o s -p {{ lpar_name }} --mem $TARGET_MEMORY_MB -w 5'" >> "$LOG_FILE"
+            NEW_MEMORY_MB=$TARGET_MEMORY_MB
+            SCALING_DETAILS="SIMULATION:${ACTUAL_CURRENT_MEMORY}MBto${TARGET_MEMORY_MB}MB"
+          else
+            echo "📈 Executing memory scaling via HMC..." >> "$LOG_FILE"
+            
+            # Test HMC connectivity first
+            echo "Testing HMC connectivity..." >> "$LOG_FILE"
+            
+            {% if hmc_ssh_key and hmc_ssh_key != '' %}
+            HMC_SSH_CMD="ssh -i {{ hmc_ssh_key }} -o ConnectTimeout=10 -o StrictHostKeyChecking=no"
+            {% else %}
+            HMC_SSH_CMD="ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no"
+            {% endif %}
+            
+            if $HMC_SSH_CMD {{ hmc_user }}@{{ hmc_host }} 'lshmc -n' >> "$LOG_FILE" 2>&1; then
+              echo "✅ HMC connectivity successful" >> "$LOG_FILE"
+              
+              # Check current LPAR memory configuration from HMC
+              echo "Checking current LPAR memory configuration from HMC..." >> "$LOG_FILE"
+              HMC_MEMORY_INFO=$($HMC_SSH_CMD {{ hmc_user }}@{{ hmc_host }} "lshwres -r mem -m {{ managed_system }} --level lpar -F name,curr_mem,min_mem,max_mem | grep '^{{ lpar_name }},'")
+              echo "HMC memory info: $HMC_MEMORY_INFO" >> "$LOG_FILE"
+              
+              # Execute memory scaling command
+              echo "Executing memory scaling command..." >> "$LOG_FILE"
+              HMC_SCALE_CMD="chhwres -r mem -m {{ managed_system }} -o s -p {{ lpar_name }} --mem $TARGET_MEMORY_MB -w 5"
+              echo "Command: $HMC_SCALE_CMD" >> "$LOG_FILE"
+              
+              if $HMC_SSH_CMD {{ hmc_user }}@{{ hmc_host }} "$HMC_SCALE_CMD" >> "$LOG_FILE" 2>&1; then
+                echo "✅ Memory scaling command executed successfully" >> "$LOG_FILE"
+                
+                # Wait for scaling to complete
+                echo "Waiting for memory scaling to take effect..." >> "$LOG_FILE"
+                sleep 15
+                
+                # Verify scaling result
+                echo "Verifying memory scaling result..." >> "$LOG_FILE"
+                
+                # Check from HMC side
+                HMC_NEW_MEMORY_INFO=$($HMC_SSH_CMD {{ hmc_user }}@{{ hmc_host }} "lshwres -r mem -m {{ managed_system }} --level lpar -F name,curr_mem | grep '^{{ lpar_name }},'")
+                HMC_NEW_MEMORY=$(echo "$HMC_NEW_MEMORY_INFO" | cut -d',' -f2)
+                echo "HMC reports new memory: ${HMC_NEW_MEMORY}MB" >> "$LOG_FILE"
+                
+                # Check from LPAR side
+                if command -v prtconf >/dev/null 2>&1; then
+                  UPDATED_MEMORY=$(prtconf | grep "Memory Size" | awk '{print $3}' 2>/dev/null)
+                  echo "LPAR reports new memory: ${UPDATED_MEMORY}MB" >> "$LOG_FILE"
+                fi
+                
+                # Use HMC reported value as authoritative
+                if [ -n "$HMC_NEW_MEMORY" ] && [ "$HMC_NEW_MEMORY" -gt 0 ] 2>/dev/null; then
+                  NEW_MEMORY_MB=$HMC_NEW_MEMORY
+                  
+                  if [ "$NEW_MEMORY_MB" = "$TARGET_MEMORY_MB" ]; then
+                    echo "✅ Memory scaling verified - successfully scaled to ${TARGET_MEMORY_MB}MB" >> "$LOG_FILE"
+                    SCALING_DETAILS="SUCCESS:${ACTUAL_CURRENT_MEMORY}MBto${NEW_MEMORY_MB}MB"
+                  elif [ "$NEW_MEMORY_MB" -gt "$ACTUAL_CURRENT_MEMORY" ] 2>/dev/null; then
+                    echo "⚠️  WARNING: Memory scaling partially successful - target ${TARGET_MEMORY_MB}MB, actual ${NEW_MEMORY_MB}MB" >> "$LOG_FILE"
+                    SCALING_DETAILS="PARTIAL:${ACTUAL_CURRENT_MEMORY}MBto${NEW_MEMORY_MB}MBtarget${TARGET_MEMORY_MB}MB"
+                  else
+                    echo "❌ Memory scaling verification failed - no memory increase detected" >> "$LOG_FILE"
+                    SCALING_SUCCESS=NO
+                    NEW_MEMORY_MB=$ACTUAL_CURRENT_MEMORY
+                    SCALING_DETAILS="FAILED:NO_INCREASE_DETECTED"
+                  fi
+                else
+                  echo "⚠️  WARNING: Unable to verify memory scaling result from HMC" >> "$LOG_FILE"
+                  NEW_MEMORY_MB=$TARGET_MEMORY_MB
+                  SCALING_DETAILS="UNKNOWN:${ACTUAL_CURRENT_MEMORY}MBto${NEW_MEMORY_MB}MB"
+                fi
+              else
+                echo "❌ Memory scaling command failed" >> "$LOG_FILE"
+                SCALING_SUCCESS=NO
+                NEW_MEMORY_MB=$ACTUAL_CURRENT_MEMORY
+                SCALING_DETAILS="FAILED:HMC_COMMAND_ERROR"
+              fi
+            else
+              echo "❌ HMC connectivity failed - cannot execute memory scaling" >> "$LOG_FILE"
+              SCALING_SUCCESS=NO
+              NEW_MEMORY_MB=$ACTUAL_CURRENT_MEMORY
+              SCALING_DETAILS="FAILED:HMC_CONNECTIVITY"
+            fi
+          fi
+        fi
+        
+        # Generate final memory statistics
+        echo "" >> "$LOG_FILE"
+        echo "Final LPAR memory statistics:" >> "$LOG_FILE"
+        if command -v prtconf >/dev/null 2>&1; then
+          prtconf | grep -i memory >> "$LOG_FILE" 2>/dev/null || echo "Unable to get final memory statistics" >> "$LOG_FILE"
+        fi
+        if command -v lparstat >/dev/null 2>&1; then
+          lparstat -i | grep -i memory >> "$LOG_FILE" 2>/dev/null
+        fi
+        
+        # Check paging space status after scaling
+        echo "" >> "$LOG_FILE"
+        echo "Post-scaling paging space status:" >> "$LOG_FILE"
+        if command -v lsps >/dev/null 2>&1; then
+          lsps -a >> "$LOG_FILE" 2>/dev/null || echo "Unable to get paging space status" >> "$LOG_FILE"
+        fi
+        
+        # Generate summary
+        echo "" >> "$LOG_FILE"
+        echo "=============================== SCALING SUMMARY ===============================" >> "$LOG_FILE"
+        echo "Scaling mode: {{ scaling_mode }}" >> "$LOG_FILE"
+        echo "Original memory: ${ACTUAL_CURRENT_MEMORY}MB" >> "$LOG_FILE"
+        echo "Target memory: ${TARGET_MEMORY_MB}MB" >> "$LOG_FILE"
+        echo "Final memory: ${NEW_MEMORY_MB}MB" >> "$LOG_FILE"
+        echo "Scaling success: $SCALING_SUCCESS" >> "$LOG_FILE"
+        echo "Scaling details: $SCALING_DETAILS" >> "$LOG_FILE"
+        echo "" >> "$LOG_FILE"
+        echo "Completed at: $(date)" >> "$LOG_FILE"
+        
+        # Output for Ansible
+        echo "SCALING_SUCCESS=$SCALING_SUCCESS"
+        echo "ORIGINAL_MEMORY_MB=$ACTUAL_CURRENT_MEMORY"
+        echo "TARGET_MEMORY_MB=$TARGET_MEMORY_MB"
+        echo "NEW_MEMORY_MB=$NEW_MEMORY_MB"
+        echo "SCALING_DETAILS=$SCALING_DETAILS"
+        echo "LOG_FILE=$LOG_FILE"
+      register: memory_scaling_results
+      changed_when: scaling_mode != 'simulation' and 'SUCCESS' in memory_scaling_results.stdout
+      failed_when: false
+      tags:
+        - scaling
+        - memory
+    
+    - name: Parse memory scaling results
+      ansible.builtin.set_fact:
+        memory_scaling_success: "{{ memory_scaling_results.stdout_lines | select('match', '^SCALING_SUCCESS=') | first | regex_replace('SCALING_SUCCESS=', '') }}"
+        memory_original_mb: "{{ memory_scaling_results.stdout_lines | select('match', '^ORIGINAL_MEMORY_MB=') | first | regex_replace('ORIGINAL_MEMORY_MB=', '') }}"
+        memory_target_mb: "{{ memory_scaling_results.stdout_lines | select('match', '^TARGET_MEMORY_MB=') | first | regex_replace('TARGET_MEMORY_MB=', '') }}"
+        memory_new_mb: "{{ memory_scaling_results.stdout_lines | select('match', '^NEW_MEMORY_MB=') | first | regex_replace('NEW_MEMORY_MB=', '') }}"
+        memory_scaling_details: "{{ memory_scaling_results.stdout_lines | select('match', '^SCALING_DETAILS=') | first | regex_replace('SCALING_DETAILS=', '') }}"
+        memory_scaling_log_file: "{{ memory_scaling_results.stdout_lines | select('match', '^LOG_FILE=') | first | regex_replace('LOG_FILE=', '') }}"
+      tags: scaling
+    
+    # Set workflow variables for AAP
+    - name: Set AAP workflow variables for memory scaling results
+      ansible.builtin.set_stats:
+        data:
+          memory_scaling_completed: "YES"
+          memory_scaling_success: "{{ memory_scaling_success }}"
+          memory_original_mb: "{{ memory_original_mb }}"
+          memory_target_mb: "{{ memory_target_mb }}"
+          memory_new_mb: "{{ memory_new_mb }}"
+          memory_scaling_details: "{{ memory_scaling_details }}"
+          memory_scaling_mode: "{{ scaling_mode }}"
+          memory_scaling_log: "{{ memory_scaling_log_file }}"
+          memory_scaling_timestamp: "{{ system_info.stdout_lines | select('match', '^DATE=') | first | regex_replace('DATE=', '') | default('N/A') }}"
+          memory_scaling_hostname: "{{ system_info.stdout_lines | select('match', '^HOSTNAME=') | first | regex_replace('HOSTNAME=', '') | default('unknown') }}"
+          memory_hmc_used: "{{ hmc_host }}"
+          memory_lpar_scaled: "{{ lpar_name }}"
+        aggregate: false
+      tags: scaling
+
+  post_tasks:
+    - name: Display memory scaling summary
+      ansible.builtin.debug:
+        msg: |
+          =====================================
+          Memory Scaling Summary
+          =====================================
+          Host: {{ system_info.stdout_lines | select('match', '^HOSTNAME=') | first | regex_replace('HOSTNAME=', '') | default('unknown') }}
+          Execution Time: {{ system_info.stdout_lines | select('match', '^DATE=') | first | regex_replace('DATE=', '') | default('N/A') }}
+          Scaling Mode: {{ scaling_mode }}
+          
+          Memory Scaling Results:
+          - Original Memory: {{ memory_original_mb | default('Unknown') }}MB
+          - Target Memory: {{ memory_target_mb | default('Unknown') }}MB
+          - New Memory: {{ memory_new_mb | default('Unknown') }}MB
+          - Scaling Success: {{ memory_scaling_success | default('Unknown') }}
+          
+          {% if memory_scaling_details and memory_scaling_details != '' %}
+          Scaling Details: {{ memory_scaling_details }}
+          {% endif %}
+          
+          {% if scaling_mode == 'simulation' %}
+          🔍 SIMULATION MODE: No actual changes were made
+          {% elif memory_scaling_success == 'YES' %}
+          ✅ Memory scaling completed successfully
+          {% if memory_new_mb != memory_original_mb %}
+          📈 Memory scaled from {{ memory_original_mb }}MB to {{ memory_new_mb }}MB
+          {% else %}
+          ℹ️  No scaling was needed
+          {% endif %}
+          {% else %}
+          ❌ Memory scaling failed - check logs for details
+          {% endif %}
+          
+          HMC Configuration:
+          - HMC Host: {{ hmc_host }}
+          - LPAR Name: {{ lpar_name }}
+          - Managed System: {{ managed_system }}
+          
+          Log File: {{ memory_scaling_log_file | default('N/A') }}
+          =====================================
+      tags: always
+    
+    - name: Send memory scaling completion notification
+      ansible.builtin.raw: |
+        if [ -n "{{ alert_emails | default('') }}" ] && [ -n "{{ smtp_host | default('') }}" ]; then
+          if [ "{{ memory_scaling_success | default('NO') }}" = "YES" ]; then
+            SUBJECT="✅ AIX Memory Scaling Completed - {{ system_info.stdout_lines | select('match', '^HOSTNAME=') | first | regex_replace('HOSTNAME=', '') | default('unknown') }}"
+          else
+            SUBJECT="❌ AIX Memory Scaling Issues - {{ system_info.stdout_lines | select('match', '^HOSTNAME=') | first | regex_replace('HOSTNAME=', '') | default('unknown') }}"
+          fi
+          
+          if command -v mail >/dev/null 2>&1; then
+            {
+              echo "Memory scaling completed with the following results:"
+              echo ""
+              echo "Mode: {{ scaling_mode }}"
+              echo "Original Memory: {{ memory_original_mb | default('Unknown') }}MB"
+              echo "Target Memory: {{ memory_target_mb | default('Unknown') }}MB"
+              echo "New Memory: {{ memory_new_mb | default('Unknown') }}MB"
+              echo "Scaling success: {{ memory_scaling_success | default('Unknown') }}"
+              echo ""
+              echo "HMC Host: {{ hmc_host }}"
+              echo "LPAR: {{ lpar_name }}"
+              echo "Managed System: {{ managed_system }}"
+              echo ""
+              echo "See detailed log: {{ memory_scaling_log_file | default('N/A') }}"
+            } | mail -s "$SUBJECT" "{{ alert_emails | join(',') }}" 2>/dev/null || echo "Failed to send completion email"
+            echo "Memory scaling notification sent to: {{ alert_emails | join(',') }}"
+          else
+            echo "Mail command not available - skipping email notification"
+          fi
+        else
+          echo "Email notification not configured or not needed"
+        fi
+      when: 
+        - alert_emails is defined
+        - send_completion_email | default(true) | bool
+      failed_when: false
+      tags: always
+    
+    - name: Fail playbook if memory scaling failed
+      ansible.builtin.fail:
+        msg: |
+          Memory scaling failed!
+          - Original Memory: {{ memory_original_mb | default('Unknown') }}MB
+          - Target Memory: {{ memory_target_mb | default('Unknown') }}MB
+          - New Memory: {{ memory_new_mb | default('Unknown') }}MB
+          - Scaling details: {{ memory_scaling_details | default('Unknown') }}
+          - Check log file: {{ memory_scaling_log_file | default('N/A') }}
+      when: 
+        - memory_scaling_success is defined
+        - memory_scaling_success != 'YES'
+        - scaling_mode != 'simulation'
+        - fail_on_scaling_error | default(true) | bool
+      tags: always

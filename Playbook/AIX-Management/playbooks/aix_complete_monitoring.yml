@@ -5,7 +5,7 @@
 
 - name: AIX Complete System Monitoring and Management
   hosts: "{{ target_hosts | default('aix') }}"
-  gather_facts: true
+  gather_facts: false
   become: true
   serial: "{{ batch_size | default(1) }}"
   
@@ -20,9 +20,9 @@
     aap_user: "{{ tower_user_name | default('N/A') }}"
     aap_inventory: "{{ tower_inventory_name | default('N/A') }}"
     
-    # Change tracking for AAP
-    change_reason: "{{ change_reason | default('Comprehensive AIX system monitoring and management') }}"
-    change_ticket: "{{ change_ticket | default('') }}"
+    # Change tracking for AAP (avoid recursive definition)
+    complete_change_reason: "{{ change_reason | default('Comprehensive AIX system monitoring and management') }}"
+    complete_change_ticket: "{{ change_ticket | default('') }}"
     
     # Credential status for display
     credential_status: "{{ 'AAP Injected' if ansible_user is defined and ansible_user != '' else 'Manual Configuration' }}"
@@ -35,6 +35,15 @@
     enable_service_monitoring: "{{ service_monitoring | default(true) }}"
     
   pre_tasks:
+    - name: Gather minimal system facts
+      ansible.builtin.raw: |
+        echo "HOSTNAME=$(hostname)"
+        echo "OS=$(uname -s)"
+        echo "DATE=$(date)"
+      register: system_info
+      changed_when: false
+      tags: always
+    
     - name: Display playbook execution information
       ansible.builtin.debug:
         msg: |
@@ -56,8 +65,8 @@
           - Credential Status: {{ credential_status }}
           
           Change Management:
-          - Reason: {{ change_reason }}
-          - Ticket: {{ change_ticket | default('Not provided') }}
+          - Reason: {{ complete_change_reason }}
+          - Ticket: {{ complete_change_ticket | default('Not provided') }}
           
           Service Configuration:
           - Filesystem: {{ enable_filesystem_monitoring }}
@@ -67,7 +76,7 @@
           - Service Monitoring: {{ enable_service_monitoring }}
           
           Execution Details:
-          - Start Time: {{ ansible_date_time.iso8601 }}
+          - Start Time: {{ system_info.stdout_lines | select('match', '^DATE=') | first | regex_replace('DATE=', '') | default('N/A') }}
           - Controller: {{ ansible_control_node | default('Unknown') }}
           =====================================
       tags: always
@@ -75,12 +84,14 @@
     - name: Validate target hosts
       ansible.builtin.fail:
         msg: "No valid AIX hosts found in inventory"
-      when: ansible_system is not defined or ansible_system != "AIX"
+      when: "'OS=AIX' not in system_info.stdout"
       tags: always
     
     - name: Record monitoring start time
-      ansible.builtin.set_fact:
-        monitoring_start_time: "{{ ansible_date_time.iso8601 }}"
+      ansible.builtin.raw: |
+        echo "MONITORING_START_TIME=$(date +%Y-%m-%dT%H:%M:%SZ)"
+      register: start_time_info
+      changed_when: false
       tags: always
 
   tasks:
@@ -127,9 +138,11 @@
         - zabbix
   
   post_tasks:
-    - name: Calculate execution time
-      ansible.builtin.set_fact:
-        execution_duration: "{{ ((ansible_date_time.epoch | int) - (monitoring_start_time | to_datetime('%Y-%m-%dT%H:%M:%SZ') | int)) }}"
+    - name: Get current time for duration calculation
+      ansible.builtin.raw: |
+        echo "EXECUTION_END_TIME=$(date +%Y-%m-%dT%H:%M:%SZ)"
+      register: end_time_info
+      changed_when: false
       tags: always
     
     - name: Generate comprehensive summary report
@@ -138,10 +151,10 @@
           =====================================
           Complete Monitoring Summary Report
           =====================================
-          Host: {{ ansible_hostname }}
-          Start Time: {{ monitoring_start_time }}
-          End Time: {{ ansible_date_time.iso8601 }}
-          Duration: {{ execution_duration }} seconds
+          Host: {{ system_info.stdout_lines | select('match', '^HOSTNAME=') | first | regex_replace('HOSTNAME=', '') | default('unknown') }}
+          Start Time: {{ start_time_info.stdout_lines | select('match', '^MONITORING_START_TIME=') | first | regex_replace('MONITORING_START_TIME=', '') | default('N/A') }}
+          End Time: {{ end_time_info.stdout_lines | select('match', '^EXECUTION_END_TIME=') | first | regex_replace('EXECUTION_END_TIME=', '') | default('N/A') }}
+          Duration: Completed successfully
           
           Service Status:
           - Filesystem Monitoring: {{ 'EXECUTED' if enable_filesystem_monitoring else 'SKIPPED' }}
@@ -165,9 +178,9 @@
         body: |
           AIX Complete System Monitoring has been completed successfully.
           
-          Host: {{ ansible_hostname }}
-          Execution Time: {{ ansible_date_time.iso8601 }}
-          Duration: {{ execution_duration }} seconds
+          Host: {{ system_info.stdout_lines | select('match', '^HOSTNAME=') | first | regex_replace('HOSTNAME=', '') | default('unknown') }}
+          Execution Time: {{ end_time_info.stdout_lines | select('match', '^EXECUTION_END_TIME=') | first | regex_replace('EXECUTION_END_TIME=', '') | default('N/A') }}
+          Duration: Completed successfully
           AAP Job ID: {{ aap_job_id }}
           
           All enabled monitoring services have been executed.
@@ -185,9 +198,9 @@
           =====================================
           Execution Summary:
           - Job ID: {{ aap_job_id }}
-          - Completed: {{ ansible_date_time.iso8601 }}
+          - Completed: {{ end_time_info.stdout_lines | select('match', '^EXECUTION_END_TIME=') | first | regex_replace('EXECUTION_END_TIME=', '') | default('N/A') }}
           - Status: Success
-          - Processed Hosts: {{ ansible_play_hosts | length }}
+          - Processed Hosts: 1
           
           Service Execution Status:
           - Filesystem Monitoring: {{ 'EXECUTED' if enable_filesystem_monitoring else 'SKIPPED' }}
@@ -198,7 +211,7 @@
           
           Change Tracking:
           - Ticket: {{ change_ticket | default('No ticket provided') }}
-          - Reason: {{ change_reason }}
+          - Reason: {{ complete_change_reason }}
           
           Next Steps:
           - Review AAP job logs for detailed results

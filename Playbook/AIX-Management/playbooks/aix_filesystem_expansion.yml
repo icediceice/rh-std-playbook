@@ -1,0 +1,401 @@
+---
+# AIX Filesystem Expansion Playbook
+# Expands filesystems based on threshold check results from workflow
+# Compatible with AAP 2.5 workflow orchestration
+# Triggered when filesystem thresholds are exceeded
+
+- name: AIX Filesystem Expansion
+  hosts: "{{ target_hosts | default('aix') }}"
+  gather_facts: false
+  become: true
+  
+  vars:
+    # Playbook identification for AAP
+    playbook_name: "AIX Filesystem Expansion"
+    playbook_version: "3.0"
+    
+    # AAP Job Information (automatically injected by AAP)
+    aap_job_template: "{{ tower_job_template_name | default('N/A') }}"
+    aap_job_id: "{{ tower_job_id | default('N/A') }}"
+    aap_user: "{{ tower_user_name | default('N/A') }}"
+    aap_inventory: "{{ tower_inventory_name | default('N/A') }}"
+    
+    # Change tracking for AAP (avoid recursive definition)
+    fs_expand_reason: "{{ change_reason | default('Automated filesystem expansion based on threshold alert') }}"
+    fs_expand_ticket: "{{ change_ticket | default('') }}"
+    
+    # Expansion configuration - can be from workflow variables or survey
+    filesystems_to_expand: "{{ filesystem_expansion_list | default('') }}"
+    expansion_mode: "{{ fs_expansion_mode | default('auto') }}"  # auto, manual, simulation
+    backup_before_expand: "{{ backup_filesystem | default(true) }}"
+    max_expansion_gb: "{{ max_expand_gb | default(50) }}"  # Safety limit per filesystem
+    
+    # Directory paths
+    aix_log_dir: "/bigc/log"
+    aix_backup_dir: "/bigc/backup"
+    
+  pre_tasks:
+    - name: Gather minimal system facts
+      ansible.builtin.raw: |
+        echo "HOSTNAME=$(hostname)"
+        echo "OS=$(uname -s)"
+        echo "DATE=$(date)"
+      register: system_info
+      changed_when: false
+      tags: always
+    
+    - name: Display filesystem expansion information
+      ansible.builtin.debug:
+        msg: |
+          =====================================
+          AIX Filesystem Expansion
+          =====================================
+          Version: {{ playbook_version }}
+          Target Hosts: {{ target_hosts | default('aix') }}
+          AAP Job Template: {{ aap_job_template }}
+          AAP Job ID: {{ aap_job_id }}
+          AAP User: {{ aap_user }}
+          Change Reason: {{ fs_expand_reason }}
+          Change Ticket: {{ fs_expand_ticket }}
+          Expansion Mode: {{ expansion_mode }}
+          Filesystems to Expand: {{ filesystems_to_expand | default('None specified') }}
+          Max Expansion per FS: {{ max_expansion_gb }}GB
+          Backup Before Expand: {{ backup_before_expand }}
+          =====================================
+      tags: always
+    
+    - name: Validate target hosts
+      ansible.builtin.fail:
+        msg: "No valid AIX hosts found in inventory"
+      when: "'OS=AIX' not in system_info.stdout"
+      tags: always
+    
+    - name: Validate expansion parameters
+      ansible.builtin.fail:
+        msg: "No filesystems specified for expansion. Check workflow variables or survey input."
+      when: 
+        - filesystems_to_expand is not defined or filesystems_to_expand == ''
+      tags: always
+    
+    - name: Ensure required directories exist
+      ansible.builtin.raw: |
+        for dir in "{{ aix_log_dir }}" "{{ aix_backup_dir }}"; do
+          [ -d "$dir" ] || mkdir -p "$dir"
+          chmod 755 "$dir"
+        done
+      changed_when: false
+      tags: always
+
+  tasks:
+    - name: Pre-expansion validation and backup
+      ansible.builtin.raw: |
+        HOSTNAME=$(hostname)
+        LOG_FILE="{{ aix_log_dir }}/filesystem_expansion_${HOSTNAME}_$(date +%Y%m%d_%H%M%S).log"
+        BACKUP_LOG="{{ aix_backup_dir }}/filesystem_backup_${HOSTNAME}_$(date +%Y%m%d_%H%M%S).log"
+        
+        echo "=============================== FILESYSTEM EXPANSION ===============================" > "$LOG_FILE"
+        echo "Date: $(date)" >> "$LOG_FILE"
+        echo "Hostname: $HOSTNAME" >> "$LOG_FILE"
+        echo "AAP Job ID: {{ aap_job_id }}" >> "$LOG_FILE"
+        echo "Change Ticket: {{ fs_expand_ticket }}" >> "$LOG_FILE"
+        echo "Expansion Mode: {{ expansion_mode }}" >> "$LOG_FILE"
+        echo "Filesystems to expand: {{ filesystems_to_expand }}" >> "$LOG_FILE"
+        echo "" >> "$LOG_FILE"
+        
+        # Initialize results
+        EXPANSION_SUCCESS=YES
+        FILESYSTEMS_EXPANDED=0
+        FILESYSTEMS_FAILED=0
+        EXPANSION_DETAILS=""
+        
+        # Validate required commands
+        echo "Validating required commands..." >> "$LOG_FILE"
+        REQUIRED_COMMANDS="df chfs lsvg lslv mount"
+        MISSING_COMMANDS=""
+        
+        for cmd in $REQUIRED_COMMANDS; do
+          if ! command -v "$cmd" >/dev/null 2>&1; then
+            MISSING_COMMANDS="$MISSING_COMMANDS $cmd"
+            echo "❌ Missing required command: $cmd" >> "$LOG_FILE"
+          else
+            echo "✅ Command available: $cmd" >> "$LOG_FILE"
+          fi
+        done
+        
+        if [ -n "$MISSING_COMMANDS" ]; then
+          echo "❌ ERROR: Missing required commands:$MISSING_COMMANDS" >> "$LOG_FILE"
+          echo "Cannot proceed with filesystem expansion" >> "$LOG_FILE"
+          EXPANSION_SUCCESS=NO
+        fi
+        
+        echo "" >> "$LOG_FILE"
+        
+        # Process each filesystem for expansion
+        if [ "$EXPANSION_SUCCESS" = "YES" ]; then
+          echo "Processing filesystems for expansion..." >> "$LOG_FILE"
+          
+          # Parse filesystem list (format: filesystem:current_usage:threshold:expand_by_gb,...)
+          echo "{{ filesystems_to_expand }}" | tr ',' '\n' | while IFS=':' read filesystem current_usage threshold expand_by_gb; do
+            # Skip empty entries
+            [ -z "$filesystem" ] && continue
+            
+            echo "" >> "$LOG_FILE"
+            echo "========== Processing $filesystem ==========" >> "$LOG_FILE"
+            echo "Current usage: ${current_usage}%" >> "$LOG_FILE"
+            echo "Threshold: ${threshold}%" >> "$LOG_FILE"
+            echo "Requested expansion: ${expand_by_gb}GB" >> "$LOG_FILE"
+            
+            # Safety check - validate expansion size
+            if [ "$expand_by_gb" -gt "{{ max_expansion_gb }}" ] 2>/dev/null; then
+              echo "⚠️  WARNING: Requested expansion (${expand_by_gb}GB) exceeds safety limit ({{ max_expansion_gb }}GB)" >> "$LOG_FILE"
+              echo "Limiting expansion to {{ max_expansion_gb }}GB" >> "$LOG_FILE"
+              expand_by_gb={{ max_expansion_gb }}
+            fi
+            
+            # Check if filesystem exists and is mounted
+            if [ -d "$filesystem" ]; then
+              echo "✅ Filesystem $filesystem exists and is accessible" >> "$LOG_FILE"
+              
+              # Get current filesystem information
+              FS_INFO=$(df -h "$filesystem" 2>/dev/null | tail -1)
+              echo "Current filesystem info: $FS_INFO" >> "$LOG_FILE"
+              
+              # Get logical volume information
+              LV_PATH=$(df "$filesystem" 2>/dev/null | tail -1 | awk '{print $1}')
+              if [ -n "$LV_PATH" ]; then
+                echo "Logical volume: $LV_PATH" >> "$LOG_FILE"
+                
+                # Get volume group information
+                VG_NAME=$(lslv "$LV_PATH" 2>/dev/null | grep "VOLUME GROUP:" | awk '{print $3}')
+                echo "Volume group: $VG_NAME" >> "$LOG_FILE"
+                
+                # Check volume group free space
+                if [ -n "$VG_NAME" ]; then
+                  VG_FREE=$(lsvg "$VG_NAME" 2>/dev/null | grep "FREE PPs:" | awk '{print $6}' | sed 's/(//')
+                  PP_SIZE=$(lsvg "$VG_NAME" 2>/dev/null | grep "PP SIZE:" | awk '{print $6}')
+                  echo "Volume group free PPs: $VG_FREE" >> "$LOG_FILE"
+                  echo "PP size: $PP_SIZE MB" >> "$LOG_FILE"
+                  
+                  # Calculate required PPs for expansion
+                  REQUIRED_PPS=$(echo "scale=0; ($expand_by_gb * 1024) / $PP_SIZE" | bc -l 2>/dev/null || echo "unknown")
+                  echo "Required PPs for ${expand_by_gb}GB expansion: $REQUIRED_PPS" >> "$LOG_FILE"
+                  
+                  # Check if enough free space available
+                  if [ "$REQUIRED_PPS" != "unknown" ] && [ "$VG_FREE" -ge "$REQUIRED_PPS" ] 2>/dev/null; then
+                    echo "✅ Sufficient free space available in volume group" >> "$LOG_FILE"
+                    
+                    {% if backup_before_expand %}
+                    # Create filesystem backup metadata
+                    echo "" >> "$LOG_FILE"
+                    echo "Creating pre-expansion backup metadata..." >> "$LOG_FILE"
+                    cat >> "$BACKUP_LOG" << EOF
+        ========== Backup for $filesystem ==========
+        Date: $(date)
+        Filesystem: $filesystem
+        Logical Volume: $LV_PATH
+        Volume Group: $VG_NAME
+        Pre-expansion size: $FS_INFO
+        Expansion size: ${expand_by_gb}GB
+        EOF
+                    
+                    # Backup filesystem structure (metadata only for large filesystems)
+                    find "$filesystem" -maxdepth 3 -type f -ls >> "$BACKUP_LOG" 2>/dev/null || echo "Partial backup listing completed" >> "$BACKUP_LOG"
+                    echo "✅ Backup metadata created" >> "$LOG_FILE"
+                    {% endif %}
+                    
+                    # Perform filesystem expansion
+                    echo "" >> "$LOG_FILE"
+                    if [ "{{ expansion_mode }}" = "simulation" ]; then
+                      echo "🔍 SIMULATION MODE: Would expand $filesystem by ${expand_by_gb}GB" >> "$LOG_FILE"
+                      echo "Command that would be executed: chfs -a size=+${expand_by_gb}G $filesystem" >> "$LOG_FILE"
+                      FILESYSTEMS_EXPANDED=$((FILESYSTEMS_EXPANDED + 1))
+                    else
+                      echo "📈 Executing filesystem expansion..." >> "$LOG_FILE"
+                      echo "Command: chfs -a size=+${expand_by_gb}G $filesystem" >> "$LOG_FILE"
+                      
+                      if chfs -a size=+${expand_by_gb}G "$filesystem" >> "$LOG_FILE" 2>&1; then
+                        echo "✅ Successfully expanded $filesystem by ${expand_by_gb}GB" >> "$LOG_FILE"
+                        
+                        # Verify expansion
+                        sleep 2
+                        NEW_FS_INFO=$(df -h "$filesystem" 2>/dev/null | tail -1)
+                        echo "Post-expansion info: $NEW_FS_INFO" >> "$LOG_FILE"
+                        
+                        FILESYSTEMS_EXPANDED=$((FILESYSTEMS_EXPANDED + 1))
+                        EXPANSION_DETAILS="${EXPANSION_DETAILS}${filesystem}:${expand_by_gb}GB:SUCCESS,"
+                      else
+                        echo "❌ Failed to expand $filesystem" >> "$LOG_FILE"
+                        FILESYSTEMS_FAILED=$((FILESYSTEMS_FAILED + 1))
+                        EXPANSION_SUCCESS=NO
+                        EXPANSION_DETAILS="${EXPANSION_DETAILS}${filesystem}:${expand_by_gb}GB:FAILED,"
+                      fi
+                    fi
+                  else
+                    echo "❌ Insufficient free space in volume group $VG_NAME" >> "$LOG_FILE"
+                    echo "Available: ${VG_FREE} PPs, Required: ${REQUIRED_PPS} PPs" >> "$LOG_FILE"
+                    FILESYSTEMS_FAILED=$((FILESYSTEMS_FAILED + 1))
+                    EXPANSION_SUCCESS=NO
+                    EXPANSION_DETAILS="${EXPANSION_DETAILS}${filesystem}:${expand_by_gb}GB:NO_SPACE,"
+                  fi
+                else
+                  echo "❌ Unable to determine volume group for $filesystem" >> "$LOG_FILE"
+                  FILESYSTEMS_FAILED=$((FILESYSTEMS_FAILED + 1))
+                  EXPANSION_SUCCESS=NO
+                fi
+              else
+                echo "❌ Unable to determine logical volume for $filesystem" >> "$LOG_FILE"
+                FILESYSTEMS_FAILED=$((FILESYSTEMS_FAILED + 1))
+                EXPANSION_SUCCESS=NO
+              fi
+            else
+              echo "❌ Filesystem $filesystem does not exist or is not accessible" >> "$LOG_FILE"
+              FILESYSTEMS_FAILED=$((FILESYSTEMS_FAILED + 1))
+              EXPANSION_SUCCESS=NO
+            fi
+          done
+        fi
+        
+        # Generate summary
+        echo "" >> "$LOG_FILE"
+        echo "=============================== EXPANSION SUMMARY ===============================" >> "$LOG_FILE"
+        echo "Overall success: $EXPANSION_SUCCESS" >> "$LOG_FILE"
+        echo "Filesystems expanded: $FILESYSTEMS_EXPANDED" >> "$LOG_FILE"
+        echo "Filesystems failed: $FILESYSTEMS_FAILED" >> "$LOG_FILE"
+        echo "Expansion mode: {{ expansion_mode }}" >> "$LOG_FILE"
+        echo "Expansion details: $EXPANSION_DETAILS" >> "$LOG_FILE"
+        echo "Backup log: $BACKUP_LOG" >> "$LOG_FILE"
+        echo "" >> "$LOG_FILE"
+        echo "Completed at: $(date)" >> "$LOG_FILE"
+        
+        # Output for Ansible
+        echo "EXPANSION_SUCCESS=$EXPANSION_SUCCESS"
+        echo "FILESYSTEMS_EXPANDED=$FILESYSTEMS_EXPANDED"
+        echo "FILESYSTEMS_FAILED=$FILESYSTEMS_FAILED"
+        echo "EXPANSION_DETAILS=$EXPANSION_DETAILS"
+        echo "LOG_FILE=$LOG_FILE"
+        echo "BACKUP_LOG=$BACKUP_LOG"
+      register: expansion_results
+      changed_when: expansion_mode != 'simulation'
+      failed_when: false
+      tags:
+        - expansion
+        - filesystem
+    
+    - name: Parse expansion results
+      ansible.builtin.set_fact:
+        expansion_success: "{{ expansion_results.stdout_lines | select('match', '^EXPANSION_SUCCESS=') | first | regex_replace('EXPANSION_SUCCESS=', '') }}"
+        filesystems_expanded: "{{ expansion_results.stdout_lines | select('match', '^FILESYSTEMS_EXPANDED=') | first | regex_replace('FILESYSTEMS_EXPANDED=', '') }}"
+        filesystems_failed: "{{ expansion_results.stdout_lines | select('match', '^FILESYSTEMS_FAILED=') | first | regex_replace('FILESYSTEMS_FAILED=', '') }}"
+        expansion_details: "{{ expansion_results.stdout_lines | select('match', '^EXPANSION_DETAILS=') | first | regex_replace('EXPANSION_DETAILS=', '') }}"
+        expansion_log_file: "{{ expansion_results.stdout_lines | select('match', '^LOG_FILE=') | first | regex_replace('LOG_FILE=', '') }}"
+        backup_log_file: "{{ expansion_results.stdout_lines | select('match', '^BACKUP_LOG=') | first | regex_replace('BACKUP_LOG=', '') }}"
+      tags: expansion
+    
+    # Set workflow variables for AAP
+    - name: Set AAP workflow variables for expansion results
+      ansible.builtin.set_stats:
+        data:
+          filesystem_expansion_completed: "YES"
+          filesystem_expansion_success: "{{ expansion_success }}"
+          filesystems_expanded_count: "{{ filesystems_expanded }}"
+          filesystems_failed_count: "{{ filesystems_failed }}"
+          filesystem_expansion_details: "{{ expansion_details }}"
+          filesystem_expansion_mode: "{{ expansion_mode }}"
+          filesystem_expansion_log: "{{ expansion_log_file }}"
+          filesystem_backup_log: "{{ backup_log_file }}"
+          filesystem_expansion_timestamp: "{{ system_info.stdout_lines | select('match', '^DATE=') | first | regex_replace('DATE=', '') | default('N/A') }}"
+          filesystem_expansion_hostname: "{{ system_info.stdout_lines | select('match', '^HOSTNAME=') | first | regex_replace('HOSTNAME=', '') | default('unknown') }}"
+        aggregate: false
+      tags: expansion
+
+  post_tasks:
+    - name: Display filesystem expansion summary
+      ansible.builtin.debug:
+        msg: |
+          =====================================
+          Filesystem Expansion Summary
+          =====================================
+          Host: {{ system_info.stdout_lines | select('match', '^HOSTNAME=') | first | regex_replace('HOSTNAME=', '') | default('unknown') }}
+          Execution Time: {{ system_info.stdout_lines | select('match', '^DATE=') | first | regex_replace('DATE=', '') | default('N/A') }}
+          Expansion Mode: {{ expansion_mode }}
+          
+          Results:
+          - Overall Success: {{ expansion_success | default('Unknown') }}
+          - Filesystems Expanded: {{ filesystems_expanded | default('0') }}
+          - Filesystems Failed: {{ filesystems_failed | default('0') }}
+          
+          {% if expansion_details and expansion_details != '' %}
+          Expansion Details:
+          {% for detail in expansion_details.split(',') if detail %}
+          {% set parts = detail.split(':') %}
+          {% if parts | length >= 3 %}
+          - {{ parts[0] }}: {{ parts[1] }} ({{ parts[2] }})
+          {% endif %}
+          {% endfor %}
+          {% endif %}
+          
+          {% if expansion_mode == 'simulation' %}
+          🔍 SIMULATION MODE: No actual changes were made
+          {% elif expansion_success == 'YES' %}
+          ✅ Filesystem expansion completed successfully
+          {% else %}
+          ❌ Some filesystems failed to expand - check logs for details
+          {% endif %}
+          
+          Log Files:
+          - Expansion Log: {{ expansion_log_file | default('N/A') }}
+          {% if backup_before_expand %}
+          - Backup Log: {{ backup_log_file | default('N/A') }}
+          {% endif %}
+          =====================================
+      tags: always
+    
+    - name: Send expansion completion notification
+      ansible.builtin.raw: |
+        if [ -n "{{ alert_emails | default('') }}" ] && [ -n "{{ smtp_host | default('') }}" ]; then
+          if [ "{{ expansion_success | default('NO') }}" = "YES" ]; then
+            SUBJECT="✅ AIX Filesystem Expansion Completed - {{ system_info.stdout_lines | select('match', '^HOSTNAME=') | first | regex_replace('HOSTNAME=', '') | default('unknown') }}"
+          else
+            SUBJECT="❌ AIX Filesystem Expansion Issues - {{ system_info.stdout_lines | select('match', '^HOSTNAME=') | first | regex_replace('HOSTNAME=', '') | default('unknown') }}"
+          fi
+          
+          if command -v mail >/dev/null 2>&1; then
+            {
+              echo "Filesystem expansion completed with the following results:"
+              echo ""
+              echo "Mode: {{ expansion_mode }}"
+              echo "Filesystems expanded: {{ filesystems_expanded | default('0') }}"
+              echo "Filesystems failed: {{ filesystems_failed | default('0') }}"
+              echo "Overall success: {{ expansion_success | default('Unknown') }}"
+              echo ""
+              echo "See detailed log: {{ expansion_log_file | default('N/A') }}"
+              {% if backup_before_expand %}
+              echo "Backup log: {{ backup_log_file | default('N/A') }}"
+              {% endif %}
+            } | mail -s "$SUBJECT" "{{ alert_emails | join(',') }}" 2>/dev/null || echo "Failed to send completion email"
+            echo "Filesystem expansion notification sent to: {{ alert_emails | join(',') }}"
+          else
+            echo "Mail command not available - skipping email notification"
+          fi
+        else
+          echo "Email notification not configured or not needed"
+        fi
+      when: 
+        - alert_emails is defined
+        - send_completion_email | default(true) | bool
+      failed_when: false
+      tags: always
+    
+    - name: Fail playbook if expansion failed
+      ansible.builtin.fail:
+        msg: |
+          Filesystem expansion failed!
+          - Filesystems expanded: {{ filesystems_expanded | default('0') }}
+          - Filesystems failed: {{ filesystems_failed | default('0') }}
+          - Check log file: {{ expansion_log_file | default('N/A') }}
+      when: 
+        - expansion_success is defined
+        - expansion_success != 'YES'
+        - expansion_mode != 'simulation'
+        - fail_on_expansion_error | default(true) | bool
+      tags: always

@@ -22,7 +22,9 @@
       "Bash(./build.sh)",
       "Bash(timeout:*)",
       "Bash(find:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(rg:*)",
+      "Bash(git add:*)"
     ],
     "deny": []
   },
