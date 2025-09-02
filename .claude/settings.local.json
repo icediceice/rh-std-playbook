@@ -21,7 +21,8 @@
       "WebFetch(domain:ibm.github.io)",
       "Bash(./build.sh)",
       "Bash(timeout:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(python3:*)"
     ],
     "deny": []
   },
