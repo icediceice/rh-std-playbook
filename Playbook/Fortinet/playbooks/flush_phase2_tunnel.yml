@@ -9,14 +9,10 @@
     ansible_httpapi_use_ssl: true
     ansible_httpapi_validate_certs: false
     ansible_httpapi_port: 443
-    vpn_name: "{{ vpn_name | default('vpn1') }}"
-    vdom: "{{ vdom | default('root') }}"
-    force_tunnel_max_retries: "{{ force_tunnel_max_retries | default(3) }}"
-    force_tunnel_online: "{{ force_tunnel_online | default(true) }}"
   tasks:
     - name: Get VPN Phase 2 tunnels for the VPN
       fortinet.fortios.fortios_monitor_fact:
-        vdom: "{{ vdom }}"
+        vdom: "{{ vdom | default('root') }}"
         access_token: "{{ ansible_password | default(fortinet_api_token) }}"
         selector: 'vpn_ipsec'
       register: vpn_phase2
@@ -24,26 +20,26 @@
     - name: Set list of phase2 tunnels related to the VPN
       set_fact:
         phase2_names: >-
-          {{ vpn_phase2.meta.results | selectattr('name', 'search', vpn_name) | map(attribute='name') | list | unique }}
+          {{ vpn_phase2.meta.results | selectattr('name', 'search', vpn_name | default('vpn1')) | map(attribute='name') | list | unique }}
 
     - name: Show Phase 2 tunnel details for reset
       debug:
         msg:
-          - "Phase 1 Name: {{ vpn_name }}"
+          - "Phase 1 Name: {{ vpn_name | default('vpn1') }}"
           - "Phase 2 Names: {{ phase2_names }}"
           - "Phase 2 Details from proxyid:"
-          - "{{ vpn_phase2.meta.results | selectattr('name', 'search', vpn_name) | map(attribute='proxyid') | flatten | list }}"
+          - "{{ vpn_phase2.meta.results | selectattr('name', 'search', vpn_name | default('vpn1')) | map(attribute='proxyid') | flatten | list }}"
 
     - name: Bring down Phase 2 tunnels using proxyid details
       fortinet.fortios.fortios_monitor:
-        vdom: "{{ vdom }}"
+        vdom: "{{ vdom | default('root') }}"
         access_token: "{{ ansible_password | default(fortinet_api_token) }}"
         selector: 'tunnel_down.vpn.ipsec'
         params:
-          p1name: "{{ vpn_name }}"
+          p1name: "{{ vpn_name | default('vpn1') }}"
           p2name: "{{ item.p2name }}"
           p2serial: "{{ item.p2serial }}"
-      loop: "{{ vpn_phase2.meta.results | selectattr('name', 'search', vpn_name) | map(attribute='proxyid') | flatten | list }}"
+      loop: "{{ vpn_phase2.meta.results | selectattr('name', 'search', vpn_name | default('vpn1')) | map(attribute='proxyid') | flatten | list }}"
       register: down_result
       ignore_errors: yes
 
@@ -53,14 +49,14 @@
 
     - name: Bring up Phase 2 tunnels to re-establish
       fortinet.fortios.fortios_monitor:
-        vdom: "{{ vdom }}"
+        vdom: "{{ vdom | default('root') }}"
         access_token: "{{ ansible_password | default(fortinet_api_token) }}"
         selector: 'tunnel_up.vpn.ipsec'
         params:
-          p1name: "{{ vpn_name }}"
+          p1name: "{{ vpn_name | default('vpn1') }}"
           p2name: "{{ item.p2name }}"
           p2serial: "{{ item.p2serial }}"
-      loop: "{{ vpn_phase2.meta.results | selectattr('name', 'search', vpn_name) | map(attribute='proxyid') | flatten | list }}"
+      loop: "{{ vpn_phase2.meta.results | selectattr('name', 'search', vpn_name | default('vpn1')) | map(attribute='proxyid') | flatten | list }}"
       register: up_result
       ignore_errors: yes
 
@@ -70,32 +66,32 @@
 
     - name: Attempt to force tunnel establishment with retries
       fortinet.fortios.fortios_monitor:
-        vdom: "{{ vdom }}"
+        vdom: "{{ vdom | default('root') }}"
         access_token: "{{ ansible_password | default(fortinet_api_token) }}"
         selector: 'tunnel_up.vpn.ipsec'
         params:
-          p1name: "{{ vpn_name }}"
+          p1name: "{{ vpn_name | default('vpn1') }}"
           p2name: "{{ item.p2name }}"
           p2serial: "{{ item.p2serial }}"
-      loop: "{{ vpn_phase2.meta.results | selectattr('name', 'search', vpn_name) | map(attribute='proxyid') | flatten | list }}"
+      loop: "{{ vpn_phase2.meta.results | selectattr('name', 'search', vpn_name | default('vpn1')) | map(attribute='proxyid') | flatten | list }}"
       register: force_up_result
       ignore_errors: yes
-      when: force_tunnel_online | bool
-      retries: "{{ force_tunnel_max_retries | default(3) }}"
+      when: force_tunnel_online | default(true) | bool
+      retries: "{{ force_tunnel_max_retries | default(3) | int }}"
       delay: 3
 
     - name: Check tunnel status after force attempts
       fortinet.fortios.fortios_monitor_fact:
-        vdom: "{{ vdom }}"
+        vdom: "{{ vdom | default('root') }}"
         access_token: "{{ ansible_password | default(fortinet_api_token) }}"
         selector: 'vpn_ipsec'
       register: vpn_status_after_force
-      when: force_tunnel_online | bool
+      when: force_tunnel_online | default(true) | bool
 
     - name: Set tunnel status after force attempts
       set_fact:
         vpn_currently_up: >-
-          {%- set phase2_list = (vpn_status_after_force.meta.results | default([]) | selectattr('name', 'search', vpn_name) | list) -%}
+          {%- set phase2_list = (vpn_status_after_force.meta.results | default([]) | selectattr('name', 'search', vpn_name | default('vpn1')) | list) -%}
           {%- if phase2_list -%}
             {%- set phase2 = phase2_list[0] -%}
             {%- set status = phase2.proxyid[0].status if phase2.proxyid and phase2.proxyid|length > 0 else 'unknown' -%}
@@ -103,18 +99,18 @@
           {%- else -%}
             {{- false -}}
           {%- endif -%}
-      when: force_tunnel_online | bool
+      when: force_tunnel_online | default(true) | bool
 
     - name: Debug force tunnel results
       debug:
         msg:
-          - "Force tunnel feature: {{ 'ENABLED' if force_tunnel_online | bool else 'DISABLED' }}"
-          - "Force tunnel result: {{ 'SUCCESS' if vpn_currently_up | default(false) else 'FAILED' if force_tunnel_online | bool else 'SKIPPED' }}"
-          - "Tunnel Status: {{ vpn_status_after_force.meta.results | selectattr('name', 'search', vpn_name) | map(attribute='proxyid') | map('first') | map(attribute='status') | first | default('unknown') | upper if force_tunnel_online | bool else 'NOT_CHECKED' }}"
+          - "Force tunnel feature: {{ 'ENABLED' if force_tunnel_online | default(true) | bool else 'DISABLED' }}"
+          - "Force tunnel result: {{ 'SUCCESS' if vpn_currently_up | default(false) else 'FAILED' if force_tunnel_online | default(true) | bool else 'SKIPPED' }}"
+          - "Tunnel Status: {{ vpn_status_after_force.meta.results | selectattr('name', 'search', vpn_name | default('vpn1')) | map(attribute='proxyid') | map('first') | map(attribute='status') | first | default('unknown') | upper if force_tunnel_online | default(true) | bool else 'NOT_CHECKED' }}"
 
     - name: Final tunnel status check
       fortinet.fortios.fortios_monitor_fact:
-        vdom: "{{ vdom }}"
+        vdom: "{{ vdom | default('root') }}"
         access_token: "{{ ansible_password | default(fortinet_api_token) }}"
         selector: 'vpn_ipsec'
       register: vpn_status_after_reset
@@ -125,7 +121,7 @@
         tunnels_count: "{{ phase2_names | length }}"
         flush_successful: "{{ (down_result.results | selectattr('failed', 'equalto', false) | list | length == down_result.results | length) and (up_result.results | selectattr('failed', 'equalto', false) | list | length == up_result.results | length) }}"
         vpn_status_after: >-
-          {%- set phase2_list = (vpn_status_after_reset.meta.results | default([]) | selectattr('name', 'search', vpn_name) | list) -%}
+          {%- set phase2_list = (vpn_status_after_reset.meta.results | default([]) | selectattr('name', 'search', vpn_name | default('vpn1')) | list) -%}
           {%- if phase2_list -%}
             {%- set phase2 = phase2_list[0] -%}
             {{- phase2.proxyid[0].status if phase2.proxyid and phase2.proxyid|length > 0 else 'unknown' -}}
@@ -133,7 +129,7 @@
             not_found
           {%- endif -%}
         vpn_up_after_reset: >-
-          {%- set phase2_list = (vpn_status_after_reset.meta.results | default([]) | selectattr('name', 'search', vpn_name) | list) -%}
+          {%- set phase2_list = (vpn_status_after_reset.meta.results | default([]) | selectattr('name', 'search', vpn_name | default('vpn1')) | list) -%}
           {%- if phase2_list -%}
             {%- set phase2 = phase2_list[0] -%}
             {%- set status = phase2.proxyid[0].status if phase2.proxyid and phase2.proxyid|length > 0 else 'unknown' -%}
@@ -146,7 +142,7 @@
       debug:
         msg:
           - "=============================="
-          - "VPN {{ vpn_name }} Phase 2 Reset Results"
+          - "VPN {{ vpn_name | default('vpn1') }} Phase 2 Reset Results"
           - "=============================="
           - "Tunnels Found: {{ tunnels_found }}"
           - "Tunnels Count: {{ tunnels_count }}"
@@ -161,15 +157,15 @@
 
     - name: Fail task if VPN is still down after Phase 2 reset
       fail:
-        msg: "VPN {{ vpn_name }} is still {{ vpn_status_after | upper }} after Phase 2 reset - workflow failed"
+        msg: "VPN {{ vpn_name | default('vpn1') }} is still {{ vpn_status_after | upper }} after Phase 2 reset - workflow failed"
       when: tunnels_found and flush_successful and not vpn_up_after_reset
 
     - name: Fail task if flush operation failed
       fail:
-        msg: "Failed to flush VPN {{ vpn_name }} Phase 2 tunnel sessions"
+        msg: "Failed to flush VPN {{ vpn_name | default('vpn1') }} Phase 2 tunnel sessions"
       when: tunnels_found and not flush_successful
 
     - name: Fail task if no tunnels found to reset
       fail:
-        msg: "No Phase 2 tunnels found for VPN {{ vpn_name }} - nothing to reset"
+        msg: "No Phase 2 tunnels found for VPN {{ vpn_name | default('vpn1') }} - nothing to reset"
       when: not tunnels_found
