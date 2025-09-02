@@ -49,71 +49,64 @@
       pause:
         seconds: 5
 
-    - name: Force tunnels online with retry logic
-      block:
-        - name: Attempt to force Phase 1 tunnel establishment (retry {{ ansible_loop.index0 + 1 }}/{{ force_tunnel_max_retries | default(3) }})
-          fortinet.fortios.fortios_monitor:
-            vdom: "{{ vdom }}"
-            access_token: "{{ ansible_password | default(fortinet_api_token) }}"
-            selector: 'bring-up.vpn.ike'
-            params:
-              mkey: "{{ item }}"
-          loop: "{{ phase1_names }}"
-          register: force_up_result
-          ignore_errors: yes
+    - name: Attempt to force Phase 1 tunnel establishment with retries
+      fortinet.fortios.fortios_monitor:
+        vdom: "{{ vdom }}"
+        access_token: "{{ ansible_password | default(fortinet_api_token) }}"
+        selector: 'bring-up.vpn.ike'
+        params:
+          mkey: "{{ item }}"
+      loop: "{{ phase1_names }}"
+      register: force_phase1_result
+      ignore_errors: yes
+      when: force_tunnel_online | bool
+      retries: "{{ force_tunnel_max_retries | default(3) }}"
+      delay: 3
 
-        - name: Force Phase 2 tunnels online if Phase 1 is available
-          fortinet.fortios.fortios_monitor:
-            vdom: "{{ vdom }}"
-            access_token: "{{ ansible_password | default(fortinet_api_token) }}"
-            selector: 'tunnel_up.vpn.ipsec'
-            params:
-              p1name: "{{ vpn_name }}"
-              p2name: "{{ item }}"
-          loop: "{{ phase2_names }}"
-          register: force_phase2_result
-          ignore_errors: yes
-          when: phase2_names | length > 0
+    - name: Force Phase 2 tunnels online if Phase 1 is available
+      fortinet.fortios.fortios_monitor:
+        vdom: "{{ vdom }}"
+        access_token: "{{ ansible_password | default(fortinet_api_token) }}"
+        selector: 'tunnel_up.vpn.ipsec'
+        params:
+          p1name: "{{ vpn_name }}"
+          p2name: "{{ item }}"
+      loop: "{{ phase2_names }}"
+      register: force_phase2_result
+      ignore_errors: yes
+      when: force_tunnel_online | bool and phase2_names | length > 0
+      retries: "{{ force_tunnel_max_retries | default(3) }}"
+      delay: 3
 
-        - name: Wait between force attempts
-          pause:
-            seconds: 3
+    - name: Check tunnel status after force attempts
+      fortinet.fortios.fortios_monitor_fact:
+        vdom: "{{ vdom }}"
+        access_token: "{{ ansible_password | default(fortinet_api_token) }}"
+        selector: 'vpn_ipsec'
+      register: vpn_status_after_force
+      when: force_tunnel_online | bool
 
-        - name: Check tunnel status after force attempt
-          fortinet.fortios.fortios_monitor_fact:
-            vdom: "{{ vdom }}"
-            access_token: "{{ ansible_password | default(fortinet_api_token) }}"
-            selector: 'vpn_ipsec'
-          register: vpn_status_check
+    - name: Set tunnel status after force attempts
+      set_fact:
+        vpn_currently_up: >-
+          {%- set phase1_list = (vpn_status_after_force.meta.results | default([]) | selectattr('name', 'search', vpn_name) | list) -%}
+          {%- if phase1_list -%}
+            {%- set phase1 = phase1_list[0] -%}
+            {%- set status = phase1.proxyid[0].status if phase1.proxyid and phase1.proxyid|length > 0 else 'unknown' -%}
+            {{- (status == 'up') | bool -}}
+          {%- else -%}
+            {{- false -}}
+          {%- endif -%}
+      when: force_tunnel_online | bool
 
-        - name: Set tunnel status fact
-          set_fact:
-            vpn_currently_up: >-
-              {%- set phase1_list = (vpn_status_check.meta.results | default([]) | selectattr('name', 'search', vpn_name) | list) -%}
-              {%- if phase1_list -%}
-                {%- set phase1 = phase1_list[0] -%}
-                {%- set status = phase1.proxyid[0].status if phase1.proxyid and phase1.proxyid|length > 0 else 'unknown' -%}
-                {{- (status == 'up') | bool -}}
-              {%- else -%}
-                {{- false -}}
-              {%- endif -%}
-
-        - name: Debug force tunnel attempt
-          debug:
-            msg:
-              - "Force attempt {{ ansible_loop.index0 + 1 }}: {{ 'SUCCESS' if vpn_currently_up else 'FAILED' }}"
-              - "Tunnel Status: {{ vpn_status_check.meta.results | selectattr('name', 'search', vpn_name) | map(attribute='proxyid') | map('first') | map(attribute='status') | first | default('unknown') | upper }}"
-
-      rescue:
-        - name: Handle force tunnel failure
-          debug:
-            msg: "Force tunnel attempt failed, will retry if attempts remaining"
-
-      loop: "{{ range(0, force_tunnel_max_retries | default(3)) | list }}"
-      loop_control:
-        loop_var: ansible_loop
-      when: force_tunnel_online | bool and not vpn_currently_up | default(false)
-      until: vpn_currently_up | default(false)
+    - name: Debug force tunnel results
+      debug:
+        msg:
+          - "Force tunnel feature: {{ 'ENABLED' if force_tunnel_online | bool else 'DISABLED' }}"
+          - "Force Phase 1 result: {{ 'SUCCESS' if force_phase1_result is succeeded else 'FAILED' if force_tunnel_online | bool else 'SKIPPED' }}"
+          - "Force Phase 2 result: {{ 'SUCCESS' if force_phase2_result is succeeded else 'FAILED' if (force_tunnel_online | bool and phase2_names | length > 0) else 'SKIPPED' }}"
+          - "Overall tunnel result: {{ 'SUCCESS' if vpn_currently_up | default(false) else 'FAILED' if force_tunnel_online | bool else 'SKIPPED' }}"
+          - "Tunnel Status: {{ vpn_status_after_force.meta.results | selectattr('name', 'search', vpn_name) | map(attribute='proxyid') | map('first') | map(attribute='status') | first | default('unknown') | upper if force_tunnel_online | bool else 'NOT_CHECKED' }}"
 
     - name: Final tunnel status check
       fortinet.fortios.fortios_monitor_fact:
