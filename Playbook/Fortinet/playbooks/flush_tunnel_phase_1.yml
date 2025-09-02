@@ -45,47 +45,23 @@
       pause:
         seconds: 5
 
-    - name: Attempt to force Phase 1 tunnel establishment with retries
-      fortinet.fortios.fortios_monitor:
-        vdom: "{{ vdom | default('root') }}"
-        access_token: "{{ ansible_password | default(fortinet_api_token) }}"
-        selector: 'bring-up.vpn.ike'
-        params:
-          mkey: "{{ item }}"
-      loop: "{{ phase1_names }}"
-      register: force_phase1_result
-      ignore_errors: yes
+    - name: Wait for tunnels to potentially re-establish naturally
+      pause:
+        seconds: "{{ tunnel_wait_time | default(10) }}"
       when: force_tunnel_online | default(true) | bool
-      retries: "{{ force_tunnel_max_retries | default(3) | int }}"
-      delay: 3
 
-    - name: Force Phase 2 tunnels online if Phase 1 is available
-      fortinet.fortios.fortios_monitor:
-        vdom: "{{ vdom | default('root') }}"
-        access_token: "{{ ansible_password | default(fortinet_api_token) }}"
-        selector: 'tunnel_up.vpn.ipsec'
-        params:
-          p1name: "{{ vpn_name | default('vpn1') }}"
-          p2name: "{{ item }}"
-      loop: "{{ phase2_names | default([]) }}"
-      register: force_phase2_result
-      ignore_errors: yes
-      when: force_tunnel_online | default(true) | bool and phase2_names | default([]) | length > 0
-      retries: "{{ force_tunnel_max_retries | default(3) | int }}"
-      delay: 3
-
-    - name: Check tunnel status after force attempts
+    - name: Check tunnel status after natural recovery period
       fortinet.fortios.fortios_monitor_fact:
         vdom: "{{ vdom | default('root') }}"
         access_token: "{{ ansible_password | default(fortinet_api_token) }}"
         selector: 'vpn_ipsec'
-      register: vpn_status_after_force
+      register: vpn_status_after_wait
       when: force_tunnel_online | default(true) | bool
 
-    - name: Set tunnel status after force attempts
+    - name: Set tunnel status after waiting period
       set_fact:
         vpn_currently_up: >-
-          {%- set phase1_list = (vpn_status_after_force.meta.results | default([]) | selectattr('name', 'search', vpn_name | default('vpn1')) | list) -%}
+          {%- set phase1_list = (vpn_status_after_wait.meta.results | default([]) | selectattr('name', 'search', vpn_name | default('vpn1')) | list) -%}
           {%- if phase1_list -%}
             {%- set phase1 = phase1_list[0] -%}
             {%- set status = phase1.proxyid[0].status if phase1.proxyid and phase1.proxyid|length > 0 else 'unknown' -%}
@@ -95,14 +71,14 @@
           {%- endif -%}
       when: force_tunnel_online | default(true) | bool
 
-    - name: Debug force tunnel results
+    - name: Debug tunnel recovery results
       debug:
         msg:
-          - "Force tunnel feature: {{ 'ENABLED' if force_tunnel_online | default(true) | bool else 'DISABLED' }}"
-          - "Force Phase 1 result: {{ 'SUCCESS' if force_phase1_result is defined and force_phase1_result is succeeded else 'FAILED' if force_tunnel_online | default(true) | bool else 'SKIPPED' }}"
-          - "Force Phase 2 result: {{ 'SUCCESS' if force_phase2_result is defined and force_phase2_result is succeeded else 'FAILED' if (force_tunnel_online | default(true) | bool and phase2_names | default([]) | length > 0) else 'SKIPPED' }}"
-          - "Overall tunnel result: {{ 'SUCCESS' if vpn_currently_up | default(false) else 'FAILED' if force_tunnel_online | default(true) | bool else 'SKIPPED' }}"
-          - "Tunnel Status: {{ vpn_status_after_force.meta.results | selectattr('name', 'search', vpn_name | default('vpn1')) | map(attribute='proxyid') | map('first') | map(attribute='status') | first | default('unknown') | upper if force_tunnel_online | default(true) | bool else 'NOT_CHECKED' }}"
+          - "Natural tunnel recovery feature: {{ 'ENABLED' if force_tunnel_online | default(true) | bool else 'DISABLED' }}"
+          - "Wait time for natural recovery: {{ tunnel_wait_time | default(10) }} seconds"
+          - "Tunnel recovery result: {{ 'SUCCESS' if vpn_currently_up | default(false) else 'WAITING' if force_tunnel_online | default(true) | bool else 'SKIPPED' }}"
+          - "Current tunnel status: {{ vpn_status_after_wait.meta.results | selectattr('name', 'search', vpn_name | default('vpn1')) | map(attribute='proxyid') | map('first') | map(attribute='status') | first | default('unknown') | upper if force_tunnel_online | default(true) | bool else 'NOT_CHECKED' }}"
+          - "Note: Tunnels often re-establish automatically after reset. If still down, check network connectivity."
 
     - name: Final tunnel status check
       fortinet.fortios.fortios_monitor_fact:
