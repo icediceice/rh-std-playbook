@@ -18,12 +18,16 @@
       register: tcp_check
       failed_when: false
 
+    - name: Debug tcp_check variable
+      ansible.builtin.debug:
+        var: tcp_check
+
     - name: Report success if port is accessible
       ansible.builtin.debug:
         msg: "SUCCESS: Port {{ target_port }} on {{ target_host }} is accessible"
-      when: not tcp_check.failed
+      when: tcp_check.state == "started"
 
     - name: Fail if port is not accessible
       ansible.builtin.fail:
         msg: "FAILED: Port {{ target_port }} on {{ target_host }} is not accessible after {{ check_timeout }} seconds"
-      when: tcp_check.failed
+      when: tcp_check.state != "started"
